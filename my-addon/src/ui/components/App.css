@@ -1,5 +1,288 @@
-.container {
-    margin: 24px;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 
+ * Adobe Spectrum Express Design System - Light Theme Only
+ * Following Adobe Express UX Guidelines:
+ * - Indigo accent color
+ * - Bolder typography (700 for headings)
+ * - Softer rounding on elements
+ * - 24px body padding, 16px between elements
+ */
+
+:root {
+    /* Spectrum Express Indigo Accent Colors */
+    --spectrum-accent-color-100: #4b4b4b;
+    --spectrum-accent-color-200: #378ef0;
+    --spectrum-accent-color-300: #2680eb;
+    --spectrum-accent-color-400: #1473e6;
+    --spectrum-accent-color-500: #0d66d0;
+    --spectrum-accent-color-600: #095aba;
+    --spectrum-accent-color-700: #0554a8;
+    
+    /* Spectrum Gray Scale - Light Theme */
+    --spectrum-gray-50: #ffffff;
+    --spectrum-gray-75: #fafafa;
+    --spectrum-gray-100: #f5f5f5;
+    --spectrum-gray-200: #eaeaea;
+    --spectrum-gray-300: #e1e1e1;
+    --spectrum-gray-400: #cacaca;
+    --spectrum-gray-500: #b3b3b3;
+    --spectrum-gray-600: #8e8e8e;
+    --spectrum-gray-700: #6e6e6e;
+    --spectrum-gray-800: #4b4b4b;
+    --spectrum-gray-900: #2c2c2c;
+    
+    /* Spacing Tokens - Adobe Express Guidelines */
+    --spectrum-spacing-50: 4px;
+    --spectrum-spacing-75: 6px;
+    --spectrum-spacing-100: 8px;
+    --spectrum-spacing-200: 12px;
+    --spectrum-spacing-300: 16px;   /* Between internal elements */
+    --spectrum-spacing-400: 24px;   /* Body padding */
+    --spectrum-spacing-500: 32px;
+    
+    /* Border Radius - Softer rounding for Express */
+    --spectrum-corner-radius-75: 4px;
+    --spectrum-corner-radius-100: 8px;
+    --spectrum-corner-radius-200: 12px;
+    
+    /* Typography - Adobe Clean */
+    --spectrum-font-size-50: 11px;
+    --spectrum-font-size-75: 12px;
+    --spectrum-font-size-100: 14px;
+    --spectrum-font-size-200: 16px;
+    --spectrum-font-size-300: 18px;
+    --spectrum-font-size-400: 20px;
+    --spectrum-font-size-500: 22px;
+    --spectrum-font-size-600: 25px;
+    
+    /* Font Weights - Bolder for Express */
+    --spectrum-font-weight-regular: 400;
+    --spectrum-font-weight-medium: 500;
+    --spectrum-font-weight-bold: 700;
+    --spectrum-font-weight-extra-bold: 800;
+    
+    /* Semantic Background Colors */
+    --spectrum-background-base: var(--spectrum-gray-50);
+    --spectrum-background-layer-1: var(--spectrum-gray-50);
+    --spectrum-background-layer-2: var(--spectrum-gray-100);
+    
+    /* Semantic Text Colors */
+    --spectrum-text-heading: var(--spectrum-gray-900);
+    --spectrum-text-body: var(--spectrum-gray-800);
+    --spectrum-text-secondary: var(--spectrum-gray-700);
+    --spectrum-text-disabled: var(--spectrum-gray-500);
+    
+    /* Border Colors */
+    --spectrum-border-color: var(--spectrum-gray-300);
+    --spectrum-border-color-hover: var(--spectrum-gray-400);
+    --spectrum-border-color-focus: var(--spectrum-accent-color-400);
+    --spectrum-divider-color: var(--spectrum-gray-200);
+    
+    /* Component Colors */
+    --spectrum-input-background: var(--spectrum-gray-50);
+    --spectrum-card-background: var(--spectrum-gray-50);
+    --spectrum-button-accent-background: var(--spectrum-accent-color-400);
+    --spectrum-button-accent-background-hover: var(--spectrum-accent-color-500);
+    --spectrum-button-accent-text: #ffffff;
+    
+    /* Status Colors - Semantic */
+    --spectrum-positive-color: #2d9d78;
+    --spectrum-notice-color: #e68619;
+    --spectrum-negative-color: #e34850;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: adobe-clean, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--spectrum-background-base);
+    color: var(--spectrum-text-body);
+}
+
+#root {
+    width: 100%;
+    min-height: 100vh;
+}
+
+/* App Container */
+.app-container {
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
+    background-color: var(--spectrum-background-base);
+    color: var(--spectrum-text-body);
+}
+
+/* App Header */
+.app-header {
+    padding: var(--spectrum-spacing-300) var(--spectrum-spacing-400);
+    background-color: var(--spectrum-background-layer-1);
+    border-bottom: 1px solid var(--spectrum-divider-color);
+}
+
+.app-title {
+    font-size: var(--spectrum-font-size-500);
+    font-weight: var(--spectrum-font-weight-bold);
+    color: var(--spectrum-accent-color-400);
+    margin: 0 0 var(--spectrum-spacing-50) 0;
+    font-family: adobe-clean, sans-serif;
+    letter-spacing: -0.01em;
+}
+
+.app-subtitle {
+    font-size: var(--spectrum-font-size-75);
+    color: var(--spectrum-text-secondary);
+    margin: 0;
+    font-weight: var(--spectrum-font-weight-regular);
+}
+
+/* Tab Content */
+.tab-content {
+    flex: 1;
+    overflow-y: auto;
+    background-color: var(--spectrum-background-base);
+}
+
+/* Spectrum Input Field */
+.spectrum-input {
+    width: 100%;
+    padding: 10px var(--spectrum-spacing-300);
+    font-size: var(--spectrum-font-size-100);
+    font-family: adobe-clean, sans-serif;
+    background-color: var(--spectrum-input-background);
+    border: 1px solid var(--spectrum-border-color);
+    border-radius: var(--spectrum-corner-radius-100);
+    color: var(--spectrum-text-body);
+    outline: none;
+    transition: border-color 0.13s ease-out, box-shadow 0.13s ease-out;
+}
+
+.spectrum-input:hover {
+    border-color: var(--spectrum-border-color-hover);
+}
+
+.spectrum-input:focus {
+    border-color: var(--spectrum-border-color-focus);
+    box-shadow: 0 0 0 1px var(--spectrum-border-color-focus);
+}
+
+.spectrum-input::placeholder {
+    color: var(--spectrum-text-disabled);
+}
+
+/* Spectrum Accent Button */
+.spectrum-button {
+    width: 100%;
+    padding: 10px var(--spectrum-spacing-400);
+    font-size: var(--spectrum-font-size-100);
+    font-weight: var(--spectrum-font-weight-bold);
+    font-family: adobe-clean, sans-serif;
+    background-color: var(--spectrum-button-accent-background);
+    color: var(--spectrum-button-accent-text);
+    border: none;
+    border-radius: var(--spectrum-corner-radius-100);
+    cursor: pointer;
+    transition: background-color 0.13s ease-out;
+}
+
+.spectrum-button:hover:not(:disabled) {
+    background-color: var(--spectrum-button-accent-background-hover);
+}
+
+.spectrum-button:active:not(:disabled) {
+    background-color: var(--spectrum-accent-color-600);
+}
+
+.spectrum-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Spectrum Card */
+.spectrum-card {
+    padding: var(--spectrum-spacing-300);
+    background-color: var(--spectrum-card-background);
+    border: 1px solid var(--spectrum-border-color);
+    border-radius: var(--spectrum-corner-radius-200);
+    transition: border-color 0.13s ease-out, box-shadow 0.13s ease-out;
+}
+
+.spectrum-card:hover {
+    border-color: var(--spectrum-border-color-hover);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Typography - Spectrum Express (Bolder) */
+.spectrum-heading-xl {
+    font-size: var(--spectrum-font-size-400);
+    font-weight: var(--spectrum-font-weight-bold);
+    color: var(--spectrum-text-heading);
+    margin: 0 0 var(--spectrum-spacing-100) 0;
+    letter-spacing: -0.01em;
+}
+
+.spectrum-heading-l {
+    font-size: var(--spectrum-font-size-200);
+    font-weight: var(--spectrum-font-weight-bold);
+    color: var(--spectrum-text-heading);
+    margin: 0 0 var(--spectrum-spacing-300) 0;
+}
+
+.spectrum-heading-m {
+    font-size: var(--spectrum-font-size-100);
+    font-weight: var(--spectrum-font-weight-medium);
+    color: var(--spectrum-text-heading);
+    margin: 0 0 var(--spectrum-spacing-100) 0;
+}
+
+.spectrum-body {
+    font-size: var(--spectrum-font-size-100);
+    color: var(--spectrum-text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.spectrum-body-s {
+    font-size: var(--spectrum-font-size-75);
+    color: var(--spectrum-text-secondary);
+    line-height: 1.5;
+    margin: 0;
+}
+
+.spectrum-label {
+    display: block;
+    font-size: var(--spectrum-font-size-75);
+    font-weight: var(--spectrum-font-weight-medium);
+    color: var(--spectrum-text-body);
+    margin-bottom: var(--spectrum-spacing-100);
+}
+
+/* Spectrum Swatch */
+.spectrum-swatch {
+    border-radius: var(--spectrum-corner-radius-75);
+    border: 1px solid var(--spectrum-border-color);
+}
+
+/* Status Colors */
+.spectrum-status-positive {
+    color: var(--spectrum-positive-color);
+}
+
+.spectrum-status-notice {
+    color: var(--spectrum-notice-color);
+}
+
+.spectrum-status-negative {
+    color: var(--spectrum-negative-color);
 }

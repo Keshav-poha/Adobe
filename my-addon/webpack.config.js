@@ -1,6 +1,8 @@
 const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
+const webpack = require("webpack");
+require('dotenv').config();
 
 const isEnvProduction = process.env.NODE_ENV === "production";
 
@@ -37,6 +39,9 @@ module.exports = {
         }),
         new CopyWebpackPlugin({
             patterns: [{ from: "src/*.json", to: "[name][ext]" }]
+        }),
+        new webpack.DefinePlugin({
+            'import.meta.env.VITE_GROQ_API_KEY': JSON.stringify(process.env.VITE_GROQ_API_KEY)
         })
     ],
     module: {
@@ -51,7 +56,7 @@ module.exports = {
                         }
                     }
                 ],
-                include: uiPath,
+                include: [uiPath, path.resolve(__dirname, "./src/context"), path.resolve(__dirname, "./src/services")],
                 exclude: /node_modules/
             },
             {
@@ -69,7 +74,7 @@ module.exports = {
             },
             {
                 test: /(\.css)$/,
-                use: ["style-loader", "css-loader"]
+                use: ["style-loader", "css-loader", "postcss-loader"]
             }
         ]
     },
