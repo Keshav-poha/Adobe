@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
-import { TrendingUp, Sparkles, Copy, Palette, RefreshCw } from 'lucide-react';
+import { TrendingUp, Sparkles, Palette, RefreshCw } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -94,13 +94,6 @@ const TrendEngine: React.FC = () => {
       alert('Failed to generate prompt. Please try again.');
     } finally {
       setGeneratingPrompt(false);
-    }
-  };
-
-  const copyToClipboard = () => {
-    if (generatedPrompt) {
-      navigator.clipboard.writeText(generatedPrompt);
-      alert('Prompt copied to clipboard!');
     }
   };
 
@@ -444,32 +437,6 @@ const TrendEngine: React.FC = () => {
               <Sparkles size={20} color="#00719f" />
               Generated Firefly Prompt
             </h3>
-            <button
-              onClick={copyToClipboard}
-              style={{
-                padding: 'var(--spectrum-spacing-100) var(--spectrum-spacing-300)',
-                fontSize: 'var(--spectrum-font-size-75)',
-                fontWeight: 600,
-                fontFamily: 'adobe-clean, sans-serif',
-                backgroundColor: '#4069FD',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 'var(--spectrum-corner-radius-100)',
-                cursor: 'pointer',
-                transition: 'all 0.13s ease-out',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#5078FE';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#4069FD';
-              }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Copy size={14} />
-                Copy
-              </span>
-            </button>
           </div>
           
           <div style={{
@@ -494,7 +461,7 @@ const TrendEngine: React.FC = () => {
             color: 'var(--spectrum-text-secondary)',
             fontStyle: 'italic'
           }}>
-            Copy this prompt and paste it into Adobe Firefly to generate your design!
+            Use this prompt in Adobe Firefly to generate your design.
           </p>
         </div>
       )}

@@ -47,6 +47,13 @@ module.exports = {
     module: {
         rules: [
             {
+                test: /\.(png|jpe?g|gif|webp|svg)$/i,
+                type: "asset/resource",
+                generator: {
+                    filename: "assets/[name][ext]"
+                }
+            },
+            {
                 test: /\.tsx?$/,
                 use: [
                     {
