@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
-import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler } from 'lucide-react';
+import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler, Upload } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -9,7 +9,8 @@ const BrandBrain: React.FC = () => {
   const { t, language } = useLanguage();
   const [url, setUrl] = useState('');
   const [manualText, setManualText] = useState('');
-  const [useManualInput, setUseManualInput] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [inputMode, setInputMode] = useState<'url' | 'text' | 'image'>('image');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { brandData, setBrandData } = useBrand();
@@ -84,60 +85,91 @@ const BrandBrain: React.FC = () => {
         throw new Error(errorMsg);
       }
 
-      // Extract text content from HTML (simple approach)
+      // Advanced web scraping to extract comprehensive brand data
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlContent, 'text/html');
-      const textContent = doc.body.textContent || '';
 
-      if (!textContent.trim()) {
-        throw new Error('No text content found on the page. Try a different URL.');
+      // Extract structured brand information
+      const title = doc.querySelector('title')?.textContent?.trim() || '';
+      const metaDescription = doc.querySelector('meta[name="description"]')?.getAttribute('content') || '';
+      const metaKeywords = doc.querySelector('meta[name="keywords"]')?.getAttribute('content') || '';
+
+      // Extract headings for brand messaging
+      const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+        .map(h => h.textContent?.trim())
+        .filter(text => text && text.length > 0)
+        .slice(0, 10); // Limit to first 10 headings
+
+      // Extract navigation and brand elements
+      const navText = Array.from(doc.querySelectorAll('nav, .nav, .navigation, .menu, .navbar'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0)
+        .join(' ');
+
+      // Extract footer content (often contains brand info)
+      const footerText = Array.from(doc.querySelectorAll('footer, .footer'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0)
+        .join(' ');
+
+      // Extract main content areas
+      const mainContent = Array.from(doc.querySelectorAll('main, .main, .content, article, .article'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0)
+        .join(' ');
+
+      // Extract CSS colors from inline styles and style tags
+      const colorMatches = htmlContent.match(/#[0-9a-fA-F]{3,6}|rgb\([^)]+\)|rgba\([^)]+\)|hsl\([^)]+\)|hsla\([^)]+\)/g) || [];
+      const uniqueColors = [...new Set(colorMatches)].slice(0, 20); // Limit to 20 unique colors
+
+      // Extract brand-related classes and IDs
+      const brandSelectors = Array.from(doc.querySelectorAll('[class*="brand"], [class*="logo"], [id*="brand"], [id*="logo"]'))
+        .map(el => el.textContent?.trim())
+        .filter(text => text && text.length > 0)
+        .join(' ');
+
+      // Combine all extracted content
+      const scrapedContent = {
+        title,
+        metaDescription,
+        metaKeywords,
+        headings: headings.join(' '),
+        navigation: navText,
+        footer: footerText,
+        mainContent,
+        colors: uniqueColors.join(', '),
+        brandElements: brandSelectors,
+        fullText: doc.body.textContent || ''
+      };
+
+      // Create comprehensive content string for AI analysis
+      const comprehensiveContent = `
+Website: ${url}
+Title: ${scrapedContent.title}
+Description: ${scrapedContent.metaDescription}
+Keywords: ${scrapedContent.metaKeywords}
+
+Headings: ${scrapedContent.headings}
+
+Navigation: ${scrapedContent.navigation}
+
+Brand Elements: ${scrapedContent.brandElements}
+
+Main Content: ${scrapedContent.mainContent}
+
+Footer: ${scrapedContent.footer}
+
+Detected Colors: ${scrapedContent.colors}
+
+Full Text Content: ${scrapedContent.fullText}
+      `.trim();
+
+      if (!comprehensiveContent.trim()) {
+        throw new Error('No content found on the page. Try a different URL.');
       }
 
-      // Capture screenshot of the website for visual analysis
-      let screenshot: string | undefined;
-      try {
-        // Use screenshot API service
-        const screenshotUrl = `https://api.screenshotone.com/take?access_key=YOUR_KEY&url=${encodeURIComponent(url)}&viewport_width=1280&viewport_height=1024&device_scale_factor=1&format=jpg&image_quality=80&block_ads=true&block_cookie_banners=true&block_trackers=true`;
-        
-        // Fallback: Try to capture using alternative method
-        // Create an iframe to load the website (may be blocked by CORS)
-        const iframe = document.createElement('iframe');
-        iframe.style.width = '1280px';
-        iframe.style.height = '1024px';
-        iframe.style.position = 'absolute';
-        iframe.style.left = '-9999px';
-        iframe.srcdoc = htmlContent;
-        
-        document.body.appendChild(iframe);
-        
-        // Wait for iframe to load
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Try to capture using html2canvas-like approach
-        // For now, we'll skip screenshot if it fails (CORS restrictions)
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = 1280;
-          canvas.height = 1024;
-          const ctx = canvas.getContext('2d');
-          
-          if (ctx && iframe.contentDocument) {
-            // This will likely fail due to CORS, but we try anyway
-            // In production, you'd use a backend service to capture screenshots
-            screenshot = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
-          }
-        } catch {
-          console.log('Screenshot capture skipped due to CORS restrictions');
-        }
-        
-        document.body.removeChild(iframe);
-      } catch (err) {
-        console.warn('Failed to capture website screenshot:', err);
-        // Continue without screenshot - text analysis still works
-      }
-
-      // Use Groq to analyze and extract brand identity
-      const extractedBrandData = await groqClient.extractBrandIdentity(textContent, language, screenshot);
+      // Use Groq to analyze and extract brand identity from comprehensive scraped data
+      const extractedBrandData = await groqClient.extractBrandIdentity(comprehensiveContent, language);
       
       setBrandData(extractedBrandData);
       setLoading(false);
@@ -167,19 +199,59 @@ const BrandBrain: React.FC = () => {
     }
   };
 
+  const handleImageExtract = async () => {
+    if (!uploadedImage) return;
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Convert uploaded image to base64
+      const arrayBuffer = await uploadedImage.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      let binaryString = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.subarray(i, i + chunkSize);
+        binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      const base64 = btoa(binaryString);
+
+      // Use Groq to analyze and extract brand identity from image
+      const extractedBrandData = await groqClient.extractBrandIdentity('', language, base64);
+      
+      setBrandData(extractedBrandData);
+      setLoading(false);
+    } catch (err) {
+      console.error('Error extracting brand data from image:', err);
+      setError(err instanceof Error ? err.message : 'Failed to extract brand data from image');
+      setLoading(false);
+    }
+  };
+
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setUploadedImage(file);
+      setError(null);
+    } else {
+      setError('Please select a valid image file');
+    }
+  };
+
   return (
     <div style={{ padding: 'var(--spectrum-spacing-400)', fontFamily: 'adobe-clean, sans-serif' }}>
-      {/* Toggle between URL and Manual input */}
-      <div style={{ marginBottom: 'var(--spectrum-spacing-300)', display: 'flex', gap: 'var(--spectrum-spacing-200)', justifyContent: 'center' }}>
+      {/* Toggle between URL, Manual input, and Image upload */}
+      <div style={{ marginBottom: 'var(--spectrum-spacing-300)', display: 'flex', gap: 'var(--spectrum-spacing-200)', justifyContent: 'center', flexWrap: 'wrap' }}>
         <button
-          onClick={() => setUseManualInput(false)}
+          onClick={() => setInputMode('url')}
           style={{
             padding: 'var(--spectrum-spacing-100) var(--spectrum-spacing-300)',
             fontSize: 'var(--spectrum-body-xs-text-size)',
             fontWeight: 600,
             fontFamily: 'adobe-clean, sans-serif',
-            backgroundColor: !useManualInput ? '#4069FD' : 'var(--spectrum-gray-200)',
-            color: !useManualInput ? '#fff' : 'var(--spectrum-gray-700)',
+            backgroundColor: inputMode === 'url' ? '#4069FD' : 'var(--spectrum-gray-200)',
+            color: inputMode === 'url' ? '#fff' : 'var(--spectrum-gray-700)',
             border: 'none',
             borderRadius: 'var(--spectrum-corner-radius-100)',
             cursor: 'pointer',
@@ -190,14 +262,14 @@ const BrandBrain: React.FC = () => {
           {t('fromUrl')}
         </button>
         <button
-          onClick={() => setUseManualInput(true)}
+          onClick={() => setInputMode('text')}
           style={{
             padding: 'var(--spectrum-spacing-100) var(--spectrum-spacing-300)',
             fontSize: 'var(--spectrum-body-xs-text-size)',
             fontWeight: 600,
             fontFamily: 'adobe-clean, sans-serif',
-            backgroundColor: useManualInput ? '#4069FD' : 'var(--spectrum-gray-200)',
-            color: useManualInput ? '#fff' : 'var(--spectrum-gray-700)',
+            backgroundColor: inputMode === 'text' ? '#4069FD' : 'var(--spectrum-gray-200)',
+            color: inputMode === 'text' ? '#fff' : 'var(--spectrum-gray-700)',
             border: 'none',
             borderRadius: 'var(--spectrum-corner-radius-100)',
             cursor: 'pointer',
@@ -207,9 +279,27 @@ const BrandBrain: React.FC = () => {
           <FileText size={14} style={{ marginRight: '4px' }} />
           {t('pasteText')}
         </button>
+        <button
+          onClick={() => setInputMode('image')}
+          style={{
+            padding: 'var(--spectrum-spacing-100) var(--spectrum-spacing-300)',
+            fontSize: 'var(--spectrum-body-xs-text-size)',
+            fontWeight: 600,
+            fontFamily: 'adobe-clean, sans-serif',
+            backgroundColor: inputMode === 'image' ? '#4069FD' : 'var(--spectrum-gray-200)',
+            color: inputMode === 'image' ? '#fff' : 'var(--spectrum-gray-700)',
+            border: 'none',
+            borderRadius: 'var(--spectrum-corner-radius-100)',
+            cursor: 'pointer',
+            transition: 'all 0.13s ease-out',
+          }}
+        >
+          <Upload size={14} style={{ marginRight: '4px' }} />
+          Upload Screenshot
+        </button>
       </div>
 
-      {!useManualInput ? (
+      {inputMode === 'url' && (
       <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
         <label style={{ 
           display: 'block',
@@ -220,6 +310,14 @@ const BrandBrain: React.FC = () => {
         }}>
           {t('websiteUrl')}
         </label>
+        <p style={{
+          fontSize: 'var(--spectrum-body-xs-text-size)',
+          color: 'var(--spectrum-gray-600)',
+          marginBottom: 'var(--spectrum-spacing-200)',
+          fontStyle: 'italic'
+        }}>
+          Note: Website analysis sometimes provides inaccurate results
+        </p>
         <input
           type="url"
           value={url}
@@ -285,7 +383,9 @@ const BrandBrain: React.FC = () => {
           </button>
         </div>
       </div>
-      ) : (
+      )}
+
+      {inputMode === 'text' && (
       <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
         <label style={{ 
           display: 'block',
@@ -364,6 +464,95 @@ const BrandBrain: React.FC = () => {
       </div>
       )}
 
+      {inputMode === 'image' && (
+      <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
+        <label style={{ 
+          display: 'block',
+          fontSize: 'var(--spectrum-label-text-size)',
+          fontWeight: 600,
+          color: 'var(--spectrum-label-color)',
+          marginBottom: 'var(--spectrum-spacing-100)'
+        }}>
+          Upload Brand Screenshot
+        </label>
+        <div style={{
+          border: '2px dashed var(--spectrum-border-color)',
+          borderRadius: 'var(--spectrum-corner-radius-100)',
+          padding: 'var(--spectrum-spacing-400)',
+          textAlign: 'center',
+          backgroundColor: 'var(--spectrum-background-layer-1)',
+          transition: 'border-color 0.13s ease-out',
+        }}>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            disabled={loading}
+            style={{
+              display: 'none',
+            }}
+            id="image-upload"
+          />
+          <label htmlFor="image-upload" style={{ cursor: loading ? 'not-allowed' : 'pointer' }}>
+            <Upload size={32} color="#4069FD" style={{ marginBottom: 'var(--spectrum-spacing-200)' }} />
+            <p style={{
+              fontSize: 'var(--spectrum-body-text-size)',
+              color: 'var(--spectrum-body-color)',
+              margin: '0 0 var(--spectrum-spacing-100) 0',
+            }}>
+              {uploadedImage ? uploadedImage.name : 'Click to upload brand screenshot'}
+            </p>
+            <p style={{
+              fontSize: 'var(--spectrum-body-xs-text-size)',
+              color: 'var(--spectrum-gray-600)',
+              margin: 0,
+            }}>
+              PNG, JPG, JPEG up to 10MB
+            </p>
+          </label>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--spectrum-spacing-300)' }}>
+          <button
+            onClick={handleImageExtract}
+            disabled={!uploadedImage || loading}
+            style={{
+              padding: 'var(--spectrum-spacing-200) var(--spectrum-spacing-400)',
+              fontSize: 'var(--spectrum-font-size-100)',
+              fontWeight: 600,
+              fontFamily: 'adobe-clean, sans-serif',
+              backgroundColor: loading ? 'var(--spectrum-gray-400)' : '#4069FD',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--spectrum-corner-radius-100)',
+              cursor: loading || !uploadedImage ? 'not-allowed' : 'pointer',
+              transition: 'all 0.13s ease-out',
+              opacity: loading || !uploadedImage ? 0.5 : 1,
+            }}
+          onMouseEnter={(e) => {
+            if (!loading && uploadedImage) {
+              e.currentTarget.style.backgroundColor = '#5078FE';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!loading && uploadedImage) {
+              e.currentTarget.style.backgroundColor = '#4069FD';
+            }
+          }}
+        >
+          {loading ? (
+            <>{t('extracting')}</>
+          ) : (
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <Sparkles size={16} />
+              {t('extractBrand')}
+            </span>
+          )}
+          </button>
+        </div>
+      </div>
+      )}
+
       {error && (
         <div style={{
           padding: 'var(--spectrum-spacing-300)',
@@ -401,6 +590,15 @@ const BrandBrain: React.FC = () => {
             <CheckSquare size={20} color="#00719f" />
             Brand Identity Extracted
           </h3>
+          
+          <p style={{
+            fontSize: 'var(--spectrum-body-xs-text-size)',
+            color: 'var(--spectrum-gray-600)',
+            margin: '0 0 var(--spectrum-spacing-300) 0',
+            fontStyle: 'italic'
+          }}>
+            Not accurate? Try other input methods above
+          </p>
           
           {/* Primary Colors */}
           <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>

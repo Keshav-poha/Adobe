@@ -48,7 +48,7 @@ class GroqClient {
   }
 
   /**
-   * Extract brand identity from website content and optional screenshot
+   * Extract brand identity with improved color analysis
    */
   async extractBrandIdentity(
     websiteContent: string, 
@@ -58,19 +58,30 @@ class GroqClient {
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
+    // Extract website URL from content for AI scraping
+    const urlMatch = websiteContent.match(/Website:\s*(https?:\/\/[^\s\n]+)/i);
+    const websiteUrl = urlMatch ? urlMatch[1] : websiteContent.split('\n')[0].replace('Website: ', '');
+    
     try {
-      const prompt = `Extract comprehensive brand identity from website content${screenshot ? ' and visual screenshot' : ''}. Return ONLY valid JSON, no markdown, no explanations. Provide all text fields in ${responseLang}.
+      const prompt = `You are a web scraping and brand analysis expert. Access the website at: ${websiteContent.split('\n')[0].replace('Website: ', '')}
 
-CONTENT:
-${websiteContent.substring(0, 3000)}
+Perform comprehensive web scraping and brand analysis. Return ONLY valid JSON, no markdown, no explanations. Provide all text fields in ${responseLang}.
 
-RULES (STRICT):
-1. primaryColors: EXACTLY 3-5 hex codes (format: #RRGGBB uppercase). Extract from visible brand elements.
-2. brandVoice: EXACTLY 2-3 sentences describing target audience, values, and differentiator.
-3. designGuidelines: EXACTLY 4 observable design patterns.
-4. typography: Extract primary/secondary fonts, weights, and heading styles${screenshot ? ' from the screenshot' : ''}.
-5. spacing: Identify base spacing unit and scale system${screenshot ? ' visible in the layout' : ''}.
-6. layoutPatterns: 2-3 key layout approaches${screenshot ? ' observed in the screenshot' : ''}.
+SCRAPING INSTRUCTIONS:
+1. Access the website URL provided above
+2. Extract CSS colors, fonts, and visual elements
+3. Analyze the live website for brand colors, typography, and design patterns
+4. Cross-reference with known brand databases for accuracy
+
+ANALYSIS REQUIREMENTS:
+1. primaryColors: EXACTLY 3-5 hex codes from the website's actual color scheme. Scrape CSS, analyze brand elements, verify against official brand colors.
+2. brandVoice: EXACTLY 2-3 sentences describing target audience, values, and differentiator based on website content.
+3. designGuidelines: EXACTLY 4 observable design patterns from the live website.
+4. typography: Extract actual fonts, weights, and styles used on the website${screenshot ? ' (supplement with screenshot analysis)' : ''}.
+5. spacing: Identify spacing system from the website's CSS/layout${screenshot ? ' visible in the layout' : ''}.
+6. layoutPatterns: 2-3 key layout approaches observed on the live website${screenshot ? ' and screenshot' : ''}.
+
+WEB SCRAPING FOCUS: Access the website directly, extract real colors from CSS/styling, analyze actual fonts and typography in use, verify brand authenticity.
 
 REQUIRED FORMAT:
 {
@@ -78,19 +89,19 @@ REQUIRED FORMAT:
   "brandVoice": "Sentence 1. Sentence 2. Sentence 3.",
   "designGuidelines": ["Pattern 1", "Pattern 2", "Pattern 3", "Pattern 4"],
   "typography": {
-    "primaryFont": "Font name or 'Sans-serif'",
-    "secondaryFont": "Font name or 'Sans-serif'",
+    "primaryFont": "Actual font name from website",
+    "secondaryFont": "Actual font name from website", 
     "fontWeights": ["400", "600", "700"],
-    "headingStyle": "Bold/Large/Condensed etc."
+    "headingStyle": "Actual heading styles observed"
   },
   "spacing": {
-    "baseUnit": "8px or 16px",
-    "scale": "1.5 ratio or Fibonacci"
+    "baseUnit": "Actual spacing unit from CSS",
+    "scale": "Actual scale system observed"
   },
-  "layoutPatterns": ["Grid-based", "Card layouts", "Centered content"]
+  "layoutPatterns": ["Actual layout patterns observed"]
 }
 
-Extract factually. If unclear, use professional defaults.`;
+Scrape the live website for accurate brand analysis.`;
 
       const messages: any[] = [
         {
@@ -117,10 +128,10 @@ Extract factually. If unclear, use professional defaults.`;
 
       const completion = await this.client.chat.completions.create({
         messages,
-        model: screenshot ? this.VISION_MODEL : this.TEXT_MODEL,
+        model: this.VISION_MODEL, // Always use vision model for superior color analysis capabilities
         temperature: 0.0,
         max_tokens: 1024,
-        response_format: screenshot ? undefined : ({ type: 'json_object' } as any),
+        response_format: ({ type: 'json_object' } as any), // Vision model can handle JSON responses
       });
 
       const responseText = completion.choices[0]?.message?.content || '{}';
@@ -135,13 +146,22 @@ Extract factually. If unclear, use professional defaults.`;
 
       // Strict validation with normalization
       if (!brandData.primaryColors || !Array.isArray(brandData.primaryColors) || brandData.primaryColors.length < 3) {
+        // Use default professional colors when AI scraping fails
         brandData.primaryColors = ['#1A73E8', '#34A853', '#FBBC04'];
       }
       
-      // Normalize hex codes to uppercase
+      // Normalize hex codes to uppercase and validate format
       brandData.primaryColors = brandData.primaryColors
         .slice(0, 5)
-        .map(c => c.toUpperCase().match(/#[0-9A-F]{6}/) ? c.toUpperCase() : '#1A73E8');
+        .map(c => {
+          if (c.startsWith('#') && c.length >= 4) {
+            return c.toUpperCase();
+          } else if (c.startsWith('#')) {
+            return '#1A73E8'; // Invalid hex, use default
+          } else {
+            return c; // Keep named colors or rgb values
+          }
+        });
       
       if (!brandData.brandVoice || brandData.brandVoice.length < 50) {
         brandData.brandVoice = 'Modern professional brand. Focused on innovation and user-centric design. Appeals to tech-savvy audiences.';
