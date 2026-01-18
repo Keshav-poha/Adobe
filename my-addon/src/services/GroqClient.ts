@@ -1,7 +1,8 @@
 import Groq from 'groq-sdk';
-import * as toxicity from '@tensorflow-models/toxicity';
-import * as tf from '@tensorflow/tfjs';
-import * as nsfwjs from 'nsfwjs';
+// Dynamic imports for heavy ML models - loaded only when needed
+let toxicity: typeof import('@tensorflow-models/toxicity');
+let tf: typeof import('@tensorflow/tfjs');
+let nsfwjs: typeof import('nsfwjs');
 
 export interface BrandData {
   primaryColors: string[];
@@ -37,9 +38,12 @@ class GroqClient {
   private readonly TEXT_MODEL = 'llama-3.3-70b-versatile';
   private readonly VISION_MODEL = 'meta-llama/llama-4-maverick-17b-128e-instruct';
 
-  // Content moderation models
-  private toxicityModel: toxicity.ToxicityClassifier | null = null;
-  private nsfwModel: nsfwjs.NSFWJS | null = null;
+  // Content moderation models (lazy loaded)
+  private toxicityModel: import('@tensorflow-models/toxicity').ToxicityClassifier | null = null;
+  private nsfwModel: import('nsfwjs').NSFWJS | null = null;
+
+  // Configuration to disable heavy ML models for smaller bundle
+  private useHeavyModels: boolean = true;
 
   constructor() {
     // Try to read build-time env, but do NOT throw — allow runtime configuration
@@ -194,6 +198,14 @@ class GroqClient {
     });
   }
 
+  /**
+   * Configure whether to use heavy ML models (default: true)
+   * Set to false to reduce bundle size and rely only on Groq fallback
+   */
+  setUseHeavyModels(enabled: boolean) {
+    this.useHeavyModels = enabled;
+  }
+
   private ensureClient() {
     if (!this.client) {
       throw new Error('Groq API key not configured. Set your Groq API key in Settings.');
@@ -202,21 +214,34 @@ class GroqClient {
   }
 
   /**
-   * Ensure toxicity model is loaded
+   * Ensure toxicity model is loaded (lazy loaded)
    */
-  private async ensureToxicityModel(): Promise<toxicity.ToxicityClassifier> {
+  private async ensureToxicityModel(): Promise<import('@tensorflow-models/toxicity').ToxicityClassifier> {
     if (!this.toxicityModel) {
+      // Lazy load TensorFlow and toxicity model
+      if (!toxicity) {
+        [toxicity, tf] = await Promise.all([
+          import('@tensorflow-models/toxicity'),
+          import('@tensorflow/tfjs')
+        ]);
+      }
+      // Use only essential toxicity label to reduce model size
       this.toxicityModel = await toxicity.load(0.8, ['toxicity']);
     }
     return this.toxicityModel;
   }
 
   /**
-   * Ensure NSFW model is loaded
+   * Ensure NSFW model is loaded (lazy loaded with smaller model)
    */
-  private async ensureNSFWModel(): Promise<nsfwjs.NSFWJS> {
+  private async ensureNSFWModel(): Promise<import('nsfwjs').NSFWJS> {
     if (!this.nsfwModel) {
-      this.nsfwModel = await nsfwjs.load();
+      // Lazy load NSFWJS with smaller MobileNet model
+      if (!nsfwjs) {
+        nsfwjs = await import('nsfwjs');
+      }
+      // Use smaller MobileNet v2 model instead of Inception v3
+      this.nsfwModel = await nsfwjs.load('MobileNetV2Mid');
     }
     return this.nsfwModel;
   }
@@ -227,18 +252,21 @@ class GroqClient {
   private async containsToxicContent(text: string): Promise<boolean> {
     if (!text || typeof text !== 'string') return false;
 
-    // First try TensorFlow model
-    try {
-      const model = await Promise.race([
-        this.ensureToxicityModel(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
-      ]);
-      const predictions = await model.classify([text]);
-      const isToxic = predictions.some(pred => pred.results[0]?.match === true);
-      console.log('TensorFlow toxicity check result:', isToxic);
-      return isToxic;
-    } catch (error) {
-      console.warn('TensorFlow toxicity check failed, falling back to Groq:', error);
+    // Skip TensorFlow if heavy models disabled
+    if (this.useHeavyModels) {
+      // First try TensorFlow model
+      try {
+        const model = await Promise.race([
+          this.ensureToxicityModel(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]);
+        const predictions = await model.classify([text]);
+        const isToxic = predictions.some(pred => pred.results[0]?.match === true);
+        console.log('TensorFlow toxicity check result:', isToxic);
+        return isToxic;
+      } catch (error) {
+        console.warn('TensorFlow toxicity check failed, falling back to Groq:', error);
+      }
     }
 
     // Fallback to Groq AI check
@@ -280,30 +308,33 @@ Respond with ONLY "YES" or "NO" (no explanation):`;
   private async containsNSFWContent(imageBase64: string): Promise<boolean> {
     if (!imageBase64 || typeof imageBase64 !== 'string') return false;
 
-    // First try NSFWJS model
-    try {
-      const model = await Promise.race([
-        this.ensureNSFWModel(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
-      ]);
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = `data:image/jpeg;base64,${imageBase64}`;
-      await Promise.race([
-        new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-        }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Image load timeout')), 5000))
-      ]);
-      const predictions = await model.classify(img);
-      const pornProb = predictions.find(p => p.className === 'Porn')?.probability || 0;
-      const hentaiProb = predictions.find(p => p.className === 'Hentai')?.probability || 0;
-      const isNSFW = pornProb > 0.5 || hentaiProb > 0.5;
-      console.log('NSFWJS check result:', isNSFW);
-      return isNSFW;
-    } catch (error) {
-      console.warn('NSFWJS check failed, falling back to Groq:', error);
+    // Skip NSFWJS if heavy models disabled
+    if (this.useHeavyModels) {
+      // First try NSFWJS model
+      try {
+        const model = await Promise.race([
+          this.ensureNSFWModel(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]);
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = `data:image/jpeg;base64,${imageBase64}`;
+        await Promise.race([
+          new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Image load timeout')), 5000))
+        ]);
+        const predictions = await model.classify(img);
+        const pornProb = predictions.find(p => p.className === 'Porn')?.probability || 0;
+        const hentaiProb = predictions.find(p => p.className === 'Hentai')?.probability || 0;
+        const isNSFW = pornProb > 0.5 || hentaiProb > 0.5;
+        console.log('NSFWJS check result:', isNSFW);
+        return isNSFW;
+      } catch (error) {
+        console.warn('NSFWJS check failed, falling back to Groq:', error);
+      }
     }
 
     // Fallback: Ask Groq to analyze image (limited effectiveness without vision)
