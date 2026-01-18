@@ -1,8 +1,4 @@
 import Groq from 'groq-sdk';
-// Dynamic imports for heavy ML models - loaded only when needed
-let toxicity: typeof import('@tensorflow-models/toxicity');
-let tf: typeof import('@tensorflow/tfjs');
-let nsfwjs: typeof import('nsfwjs');
 
 export interface BrandData {
   primaryColors: string[];
@@ -37,13 +33,6 @@ class GroqClient {
   private apiKey: string | null = null;
   private readonly TEXT_MODEL = 'llama-3.3-70b-versatile';
   private readonly VISION_MODEL = 'meta-llama/llama-4-maverick-17b-128e-instruct';
-
-  // Content moderation models (lazy loaded)
-  private toxicityModel: import('@tensorflow-models/toxicity').ToxicityClassifier | null = null;
-  private nsfwModel: import('nsfwjs').NSFWJS | null = null;
-
-  // Configuration to disable heavy ML models for smaller bundle
-  private useHeavyModels: boolean = true;
 
   constructor() {
     // Try to read build-time env, but do NOT throw — allow runtime configuration
@@ -198,14 +187,6 @@ class GroqClient {
     });
   }
 
-  /**
-   * Configure whether to use heavy ML models (default: true)
-   * Set to false to reduce bundle size and rely only on Groq fallback
-   */
-  setUseHeavyModels(enabled: boolean) {
-    this.useHeavyModels = enabled;
-  }
-
   private ensureClient() {
     if (!this.client) {
       throw new Error('Groq API key not configured. Set your Groq API key in Settings.');
@@ -214,74 +195,23 @@ class GroqClient {
   }
 
   /**
-   * Ensure toxicity model is loaded (lazy loaded)
+   * Check user input content using AI (Groq)
    */
-  private async ensureToxicityModel(): Promise<import('@tensorflow-models/toxicity').ToxicityClassifier> {
-    if (!this.toxicityModel) {
-      // Lazy load TensorFlow and toxicity model
-      if (!toxicity) {
-        [toxicity, tf] = await Promise.all([
-          import('@tensorflow-models/toxicity'),
-          import('@tensorflow/tfjs')
-        ]);
-      }
-      // Use only essential toxicity label to reduce model size
-      this.toxicityModel = await toxicity.load(0.8, ['toxicity']);
-    }
-    return this.toxicityModel;
-  }
+  private async checkUserInput(text: string): Promise<void> {
+    if (!text || typeof text !== 'string') return;
 
-  /**
-   * Ensure NSFW model is loaded (lazy loaded with smaller model)
-   */
-  private async ensureNSFWModel(): Promise<import('nsfwjs').NSFWJS> {
-    if (!this.nsfwModel) {
-      // Lazy load NSFWJS with smaller MobileNet model
-      if (!nsfwjs) {
-        nsfwjs = await import('nsfwjs');
-      }
-      // Use smaller MobileNet v2 model instead of Inception v3
-      this.nsfwModel = await nsfwjs.load('MobileNetV2Mid');
-    }
-    return this.nsfwModel;
-  }
-
-  /**
-   * Check if text contains toxic content using TensorFlow, fallback to Groq
-   */
-  private async containsToxicContent(text: string): Promise<boolean> {
-    if (!text || typeof text !== 'string') return false;
-
-    // Skip TensorFlow if heavy models disabled
-    if (this.useHeavyModels) {
-      // First try TensorFlow model
-      try {
-        const model = await Promise.race([
-          this.ensureToxicityModel(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
-        ]);
-        const predictions = await model.classify([text]);
-        const isToxic = predictions.some(pred => pred.results[0]?.match === true);
-        console.log('TensorFlow toxicity check result:', isToxic);
-        return isToxic;
-      } catch (error) {
-        console.warn('TensorFlow toxicity check failed, falling back to Groq:', error);
-      }
-    }
-
-    // Fallback to Groq AI check
     try {
       const client = this.ensureClient();
-      const prompt = `Analyze this text for explicit, inappropriate, or harmful content. Respond with ONLY "YES" if it contains any of the following:
+      const prompt = `Analyze this user input for explicit, inappropriate, or harmful content. If it contains any of the following, respond with "REJECT":
 - Profanity, swear words, or offensive language
 - Hate speech, racism, sexism, or discrimination
 - Threats, violence, or harmful content
 - Sexual content, pornography, or lewd material
 - Illegal activities or harmful instructions
 
-Text to analyze: "${text}"
+User input: "${text}"
 
-Respond with ONLY "YES" or "NO" (no explanation):`;
+If the content is inappropriate, respond with only "REJECT". If it's safe, respond with only "APPROVE".`;
 
       const completion = await this.retryWithBackoff(async () => {
         return client.chat.completions.create({
@@ -293,85 +223,53 @@ Respond with ONLY "YES" or "NO" (no explanation):`;
       });
 
       const response = completion.choices[0]?.message?.content?.trim().toUpperCase();
-      const isInappropriate = response === 'YES';
-      console.log('Groq fallback toxicity check result:', isInappropriate);
-      return isInappropriate;
-    } catch (error) {
-      console.warn('Groq fallback toxicity check failed:', error);
-      return false; // Final fail-open
-    }
-  }
-
-  /**
-   * Check if image contains NSFW content using NSFWJS, fallback to Groq description
-   */
-  private async containsNSFWContent(imageBase64: string): Promise<boolean> {
-    if (!imageBase64 || typeof imageBase64 !== 'string') return false;
-
-    // Skip NSFWJS if heavy models disabled
-    if (this.useHeavyModels) {
-      // First try NSFWJS model
-      try {
-        const model = await Promise.race([
-          this.ensureNSFWModel(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
-        ]);
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.src = `data:image/jpeg;base64,${imageBase64}`;
-        await Promise.race([
-          new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-          }),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Image load timeout')), 5000))
-        ]);
-        const predictions = await model.classify(img);
-        const pornProb = predictions.find(p => p.className === 'Porn')?.probability || 0;
-        const hentaiProb = predictions.find(p => p.className === 'Hentai')?.probability || 0;
-        const isNSFW = pornProb > 0.5 || hentaiProb > 0.5;
-        console.log('NSFWJS check result:', isNSFW);
-        return isNSFW;
-      } catch (error) {
-        console.warn('NSFWJS check failed, falling back to Groq:', error);
+      if (response === 'REJECT') {
+        throw new Error('Input content contains inappropriate material. Please provide clean content.');
       }
-    }
-
-    // Fallback: Ask Groq to analyze image (limited effectiveness without vision)
-    try {
-      const client = this.ensureClient();
-      const prompt = `I have an image that I need to check for inappropriate content. Since I cannot show you the image directly, please analyze if this base64-encoded image data appears to represent explicit, pornographic, or NSFW content.
-
-Base64 data preview (first 200 chars): ${imageBase64.substring(0, 200)}...
-
-Based on the data structure and any visible patterns, does this appear to be:
-- Pornographic or sexually explicit content?
-- Nude or adult material?
-- Violent or harmful imagery?
-
-Respond with ONLY "YES" or "NO" (no explanation):`;
-
-      const completion = await this.retryWithBackoff(async () => {
-        return client.chat.completions.create({
-          messages: [{ role: 'user', content: prompt }],
-          model: this.TEXT_MODEL,
-          temperature: 0,
-          max_tokens: 10,
-        });
-      });
-
-      const response = completion.choices[0]?.message?.content?.trim().toUpperCase();
-      const isInappropriate = response === 'YES';
-      console.log('Groq fallback NSFW check result:', isInappropriate);
-      return isInappropriate;
     } catch (error) {
-      console.warn('Groq fallback NSFW check failed:', error);
-      return false; // Final fail-open
+      if (error instanceof Error && error.message.includes('inappropriate')) {
+        throw error; // Re-throw our custom error
+      }
+      console.warn('User input check failed:', error);
+      // Allow content if check fails (fail-open for user experience)
     }
   }
 
   /**
-   * Extract brand identity with improved error handling
+   * Check AI output content using key-less API (Purgomalum)
+   */
+  private async checkAIOutput(text: string): Promise<void> {
+    if (!text || typeof text !== 'string') return;
+
+    try {
+      // Use Purgomalum API (key-less profanity checker)
+      const encodedText = encodeURIComponent(text);
+      const response = await fetch(`https://www.purgomalum.com/service/containsprofanity?text=${encodedText}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'text/plain',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Purgomalum API error: ${response.status}`);
+      }
+
+      const result = await response.text();
+      if (result.toLowerCase() === 'true') {
+        throw new Error('Generated content contains inappropriate material. Please try again.');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('inappropriate')) {
+        throw error; // Re-throw our custom error
+      }
+      console.warn('AI output check failed:', error);
+      // Allow content if check fails (fail-open)
+    }
+  }
+
+  /**
+   * Extract brand identity with AI input validation
    */
   async extractBrandIdentity(
     websiteContent: string, 
@@ -391,13 +289,8 @@ Respond with ONLY "YES" or "NO" (no explanation):`;
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
-    // Check input for explicit content
-    if (await this.containsToxicContent(websiteContent)) {
-      throw new Error('Input content contains inappropriate material. Please provide clean content.');
-    }
-    if (screenshot && await this.containsNSFWContent(screenshot)) {
-      throw new Error('Input image contains inappropriate material. Please provide clean content.');
-    }
+    // Check user input with AI
+    await this.checkUserInput(websiteContent);
     
     try {
       // Determine which model to use based on input type
@@ -510,11 +403,9 @@ REQUIRED FORMAT:
 
       const brandData = JSON.parse(cleanedResponse) as BrandData;
 
-      // Check output for explicit content
-      if (await this.containsToxicContent(brandData.brandVoice) ||
-          await this.containsToxicContent(brandData.designGuidelines.join(' '))) {
-        throw new Error('Generated content contains inappropriate material. Please try again.');
-      }
+      // Check AI output with key-less API
+      await this.checkAIOutput(brandData.brandVoice);
+      await this.checkAIOutput(brandData.designGuidelines.join(' '));
 
       // Validate required fields
       if (!brandData.primaryColors || !Array.isArray(brandData.primaryColors) || brandData.primaryColors.length < 3) {
@@ -573,10 +464,9 @@ REQUIRED FORMAT:
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
-    // Check inputs for explicit content
-    if (await this.containsToxicContent(trend) || await this.containsToxicContent(brandContext.brandVoice)) {
-      throw new Error('Input content contains inappropriate material. Please provide clean content.');
-    }
+    // Check user inputs with AI
+    await this.checkUserInput(trend);
+    await this.checkUserInput(brandContext.brandVoice);
     
     try {
       const prompt = `Create a concise Adobe Firefly prompt (max 100 words) in ${responseLang} for: ${trend}
@@ -606,10 +496,8 @@ Include: style, composition, lighting, mood, brand colors. Be specific and direc
         throw new Error('Invalid response from Firefly prompt generator');
       }
 
-      // Check output for explicit content
-      if (await this.containsToxicContent(result)) {
-        throw new Error('Generated content contains inappropriate material. Please try again.');
-      }
+      // Check AI output with key-less API
+      await this.checkAIOutput(result);
 
       return result;
     } catch (error) {
@@ -628,9 +516,10 @@ Include: style, composition, lighting, mood, brand colors. Be specific and direc
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
-    // Check inputs for explicit content
-    if (brandData && (await this.containsToxicContent(brandData.brandVoice) || await this.containsToxicContent(brandData.designGuidelines.join(' ')))) {
-      throw new Error('Input content contains inappropriate material. Please provide clean content.');
+    // Check user inputs with AI
+    if (brandData) {
+      await this.checkUserInput(brandData.brandVoice);
+      await this.checkUserInput(brandData.designGuidelines.join(' '));
     }
     
     try {
@@ -701,11 +590,10 @@ Return ONLY the JSON array, no markdown formatting or additional text.`;
 
       const trends = JSON.parse(cleanedResponse) as Array<{ id: string; name: string; desc: string }>;
 
-      // Check output for explicit content
+      // Check AI outputs with key-less API
       for (const trend of trends) {
-        if (await this.containsToxicContent(trend.name) || await this.containsToxicContent(trend.desc)) {
-          throw new Error('Generated content contains inappropriate material. Please try again.');
-        }
+        await this.checkAIOutput(trend.name);
+        await this.checkAIOutput(trend.desc);
       }
 
       // Validate response
@@ -745,13 +633,10 @@ Return ONLY the JSON array, no markdown formatting or additional text.`;
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
-    // Check inputs for explicit content
-    if (await this.containsToxicContent(brandGuidelines.brandVoice) || await this.containsToxicContent(brandGuidelines.designGuidelines.join(' '))) {
-      throw new Error('Input content contains inappropriate material. Please provide clean content.');
-    }
-    if (await this.containsNSFWContent(imageBase64)) {
-      throw new Error('Input image contains inappropriate material. Please provide clean content.');
-    }
+    // Check inputs with AI
+    await this.checkUserInput(brandGuidelines.brandVoice);
+    await this.checkUserInput(brandGuidelines.designGuidelines.join(' '));
+    // Note: Image input validation removed as requested - no client-side checks for images
     
     try {
       const typographyInfo = brandGuidelines.typography 
@@ -868,10 +753,9 @@ Return ONLY valid JSON:
           : ['Continue refining design based on brand guidelines.'],
       };
 
-      // Check output for explicit content
-      if (await this.containsToxicContent(result.feedback.join(' ')) || await this.containsToxicContent(result.recommendations.join(' '))) {
-        throw new Error('Generated content contains inappropriate material. Please try again.');
-      }
+      // Check AI outputs with key-less API
+      await this.checkAIOutput(result.feedback.join(' '));
+      await this.checkAIOutput(result.recommendations.join(' '));
 
       // Cache the result for future use
       this.setCachedData(cacheKey, result);
