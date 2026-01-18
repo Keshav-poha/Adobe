@@ -53,7 +53,7 @@ const About: React.FC = () => {
   const DOCS_URL =
     'https://silky-saturday-54e.notion.site/2eabba81b034817a8256defeaa1bd200?v=2eabba81b03481be8693000cfb9f9262';
   const GITHUB_URL = 'https://github.com/Keshav-poha/Adobe';
-  const SUPPORT_EMAIL = 'prachiii.200705@gmail.com';
+  const SUPPORT_EMAIL = 'Keshav.poha@gmail.com';
 
   const openResourcesPopup = async () => {
     try {

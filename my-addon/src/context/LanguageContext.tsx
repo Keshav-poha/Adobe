@@ -31,17 +31,14 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
         const userLocale = addOnUISdk.app.ui.locale;
         const detectedLang = mapLocaleToLanguage(userLocale);
         setLanguageState(detectedLang);
-        console.log(`Detected Adobe Express locale: ${userLocale} → Language: ${detectedLang}`);
-        
+
         // Listen for locale changes in Adobe Express
         (addOnUISdk.app as any).on('localechange', (data: any) => {
-          console.log(`Adobe Express locale changed to: ${data.locale}`);
           const newLang = mapLocaleToLanguage(data.locale);
           setLanguageState(newLang);
-          console.log(`UI language auto-switched to: ${newLang}`);
         });
       } catch (error) {
-        console.warn('Adobe Express SDK not available, using fallback language:', error);
+        // Adobe Express SDK not available — fallback to saved language or English
         // Fallback to localStorage or English if SDK fails
         const saved = localStorage.getItem('pixelpluck-language') as Language;
         if (saved && translations[saved]) {

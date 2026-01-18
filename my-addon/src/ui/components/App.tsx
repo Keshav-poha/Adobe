@@ -20,6 +20,7 @@ import { Settings as SettingsIcon, Info } from "lucide-react";
 import "./App.css";
 
 import { AddOnSDKAPI } from "https://express.adobe.com/static/add-on-sdk/sdk.js";
+import ErrorBoundary from './ErrorBoundary';
 
 const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxProxy: DocumentSandboxApi }) => {
     const [activeTab, setActiveTab] = useState('brand-brain');
@@ -46,7 +47,9 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
             <LanguageProvider>
                 <ToastProvider>
                     <BrandProvider>
-                        <div className="app-container">
+                        {/* ErrorBoundary shows a friendly fallback and prevents full crash */}
+                        <ErrorBoundary>
+                            <div className="app-container">
                             <div className="app-header">
                                 <h1 className="app-title">Pixel Pluck</h1>
                                 <p className="app-subtitle">Brand-Powered Design Assistant</p>
@@ -81,7 +84,8 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
                                 <Info size={16} />
                             </button>
                         </div>
-                    </div>
+                        </div>
+                    </ErrorBoundary>
                 </BrandProvider>
             </ToastProvider>
             </LanguageProvider>

@@ -29,22 +29,42 @@ export interface VisionAnalysis {
 }
 
 class GroqClient {
-  private client: Groq;
+  private client: Groq | null = null;
+  private apiKey: string | null = null;
   private readonly TEXT_MODEL = 'llama-3.3-70b-versatile';
   private readonly VISION_MODEL = 'meta-llama/llama-4-maverick-17b-128e-instruct';
 
   constructor() {
-    // @ts-ignore - Webpack DefinePlugin injects this
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY;
-    
-    if (!apiKey) {
-      throw new Error('VITE_GROQ_API_KEY is not defined in environment variables');
+    // Try to read build-time env, but do NOT throw — allow runtime configuration
+    // @ts-ignore - Webpack DefinePlugin may inject this
+    const apiKey = (typeof window !== 'undefined' && (import.meta as any)?.env?.VITE_GROQ_API_KEY) || null;
+    if (apiKey) {
+      this.setApiKey(apiKey);
+    }
+  }
+
+  /**
+   * Set the Groq API key at runtime and initialize the SDK client.
+   */
+  setApiKey(apiKey: string) {
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim() === '') {
+      this.client = null;
+      this.apiKey = null;
+      return;
     }
 
+    this.apiKey = apiKey.trim();
     this.client = new Groq({
-      apiKey,
-      dangerouslyAllowBrowser: true, // Required for client-side usage
+      apiKey: this.apiKey,
+      dangerouslyAllowBrowser: true,
     });
+  }
+
+  private ensureClient() {
+    if (!this.client) {
+      throw new Error('Groq API key not configured. Set your Groq API key in Settings.');
+    }
+    return this.client;
   }
 
   /**
@@ -126,7 +146,9 @@ Scrape the live website for accurate brand analysis.`;
         });
       }
 
-      const completion = await this.client.chat.completions.create({
+      const client = this.ensureClient();
+
+      const completion = await client.chat.completions.create({
         messages,
         model: this.VISION_MODEL, // Always use vision model for superior color analysis capabilities
         temperature: 0.0,
@@ -237,7 +259,9 @@ Brand: ${brandContext.primaryColors.slice(0, 3).join(', ')} colors, ${brandConte
 
 Include: style, composition, lighting, mood, brand colors. Be specific and direct.`;
 
-      const completion = await this.client.chat.completions.create({
+      const client = this.ensureClient();
+
+      const completion = await client.chat.completions.create({
         messages: [
           {
             role: 'user',
@@ -305,7 +329,9 @@ Include a mix of:
 
 Return ONLY the JSON array, no markdown formatting or additional text.`;
 
-      const completion = await this.client.chat.completions.create({
+      const client = this.ensureClient();
+
+      const completion = await client.chat.completions.create({
         messages: [
           {
             role: 'user',
@@ -421,7 +447,9 @@ Return ONLY valid JSON:
         });
       }
 
-      const completion = await this.client.chat.completions.create({
+      const client = this.ensureClient();
+
+      const completion = await client.chat.completions.create({
         messages: [
           {
             role: 'system',
@@ -439,19 +467,13 @@ Return ONLY valid JSON:
 
       const responseText = completion.choices[0]?.message?.content || '{}';
       
-      console.log('Vision API Response:', responseText); // Debug log
-      
       // Clean up response
       const cleanedResponse = responseText
         .replace(/```json\n?/g, '')
         .replace(/```\n?/g, '')
         .trim();
 
-      console.log('Cleaned Response:', cleanedResponse); // Debug log
-
       const analysis = JSON.parse(cleanedResponse) as VisionAnalysis;
-
-      console.log('Parsed Analysis:', analysis); // Debug log
 
       // Validate and clamp scores to 0-100 range
       const clampScore = (score: number | undefined, defaultVal: number = 50): number => {

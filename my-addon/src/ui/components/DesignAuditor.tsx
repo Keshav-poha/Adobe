@@ -5,6 +5,7 @@ import { Search, BarChart3, Lightbulb, Sparkles, Upload, Lock, Crown } from 'luc
 import { ProgressCircle } from './LoadingComponents';
 import addOnUISdk from "https://express.adobe.com/static/add-on-sdk/sdk.js";
 import { useLanguage } from '../../context/LanguageContext';
+import { useToast } from './ToastNotification';
 
 const DesignAuditor: React.FC = () => {
   const { t, language } = useLanguage();
@@ -14,6 +15,8 @@ const DesignAuditor: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isPremiumUser, setIsPremiumUser] = useState<boolean | null>(null);
   const [checkingPremium, setCheckingPremium] = useState(true);
+
+  const toast = useToast();
 
   // Check premium status on component mount
   useEffect(() => {
@@ -164,6 +167,7 @@ const DesignAuditor: React.FC = () => {
       }
       
       setAnalysis(visionAnalysis);
+      toast.showToast('success', 'Design audit completed', 4000);
     } catch (error) {
       console.error('Error running audit:', error);
       
@@ -185,6 +189,7 @@ const DesignAuditor: React.FC = () => {
       }
       
       setError(errorMessage);
+      toast.showToast('error', errorMessage, 7000);
     } finally {
       setAuditing(false);
     }

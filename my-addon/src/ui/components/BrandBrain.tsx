@@ -3,6 +3,7 @@ import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
 import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler, Upload } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
+import { useToast } from './ToastNotification';
 import { useLanguage } from '../../context/LanguageContext';
 
 const BrandBrain: React.FC = () => {
@@ -14,6 +15,7 @@ const BrandBrain: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { brandData, setBrandData } = useBrand();
+  const toast = useToast();
 
   const handleExtract = async () => {
     if (!url) return;
@@ -72,7 +74,7 @@ const BrandBrain: React.FC = () => {
           if (htmlContent) break; // Successfully fetched content
         } catch (err) {
           lastError = err;
-          console.warn(`Proxy failed: ${proxyUrl}`, err);
+          // Continue to next proxy silently; surface if all proxies fail
           continue; // Try next proxy
         }
       }
@@ -174,8 +176,9 @@ Full Text Content: ${scrapedContent.fullText}
       setBrandData(extractedBrandData);
       setLoading(false);
     } catch (err) {
-      console.error('Error extracting brand data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to extract brand data');
+      const message = err instanceof Error ? err.message : 'Failed to extract brand data';
+      setError(message);
+      toast.showToast('error', message, 7000);
       setLoading(false);
     }
   };
@@ -193,8 +196,9 @@ Full Text Content: ${scrapedContent.fullText}
       setBrandData(extractedBrandData);
       setLoading(false);
     } catch (err) {
-      console.error('Error extracting brand data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to extract brand data');
+      const message = err instanceof Error ? err.message : 'Failed to extract brand data';
+      setError(message);
+      toast.showToast('error', message, 7000);
       setLoading(false);
     }
   };
@@ -223,8 +227,9 @@ Full Text Content: ${scrapedContent.fullText}
       setBrandData(extractedBrandData);
       setLoading(false);
     } catch (err) {
-      console.error('Error extracting brand data from image:', err);
-      setError(err instanceof Error ? err.message : 'Failed to extract brand data from image');
+      const message = err instanceof Error ? err.message : 'Failed to extract brand data from image';
+      setError(message);
+      toast.showToast('error', message, 7000);
       setLoading(false);
     }
   };

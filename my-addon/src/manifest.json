@@ -3,6 +3,16 @@
     "name": "Pixel Pluck",
     "version": "1.0.0",
     "manifestVersion": 2,
+    "summary": "AI-powered brand analysis and design prompt generation.",
+    "description": "Extract brand identity from websites, generate Firefly prompts, and audit designs against brand guidelines. Requires a Groq API key configured in Settings for AI features.",
+    "helpUrl": "https://silky-saturday-54e.notion.site/2eabba81b034817a8256defeaa1bd200?v=2eabba81b03481be8693000cfb9f9262",
+    "supportEmail": "keshav.poha@gmail.com",
+    "privacyPolicyUrl": "https://github.com/keshav-poha/adobe-express-addon/blob/main/privacy_policy.md",
+    "eulaUrl": "https://github.com/keshav-poha/adobe-express-addon/blob/main/eula.md",
+    "keywords": ["brand", "design", "AI", "Firefly", "audit"],
+    "icons": {
+        "144": "assets/light-full-removebg-preview.png"
+    },
     "requirements": {
         "apps": [
             {

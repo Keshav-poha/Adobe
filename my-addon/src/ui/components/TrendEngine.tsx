@@ -3,6 +3,7 @@ import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
 import { TrendingUp, Sparkles, Palette, RefreshCw } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
+import { useToast } from './ToastNotification';
 import { useLanguage } from '../../context/LanguageContext';
 
 const TrendEngine: React.FC = () => {
@@ -14,6 +15,8 @@ const TrendEngine: React.FC = () => {
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [trends, setTrends] = useState<Array<{ id: string; name: string; desc: string }>>([]);
+
+  const toast = useToast();
 
   // Fetch AI-generated trends on component mount and when brand data or language changes
   useEffect(() => {
@@ -27,7 +30,9 @@ const TrendEngine: React.FC = () => {
       const aiTrends = await groqClient.getViralTrends(hasBrandData ? brandData : undefined, language);
       setTrends(aiTrends);
     } catch (error) {
-      // Silently fallback to default trends
+      console.error('Failed to fetch viral trends:', error);
+      // Inform user about potential configuration issues
+      toast.showToast('error', 'Failed to load AI trends. Set your Groq API key in Settings.', 7000);
     } finally {
       setLoadingTrends(false);
     }
@@ -58,17 +63,15 @@ const TrendEngine: React.FC = () => {
 
   const handleGeneratePrompt = async () => {
     if (!hasBrandData) {
-      alert('Please extract brand data first in the Brand Brain tab!');
+      toast.showToast('warning', 'Extract brand data in Brand Brain first to generate prompts.', 5000);
       return;
     }
-
     if (selectedTrends.length === 0) {
-      alert('Please select at least one trend!');
+      toast.showToast('info', 'Select at least one trend to proceed.', 4000);
       return;
     }
-
     if (!selectedContentType) {
-      alert('Please select a content type first!');
+      toast.showToast('info', 'Choose a content type before generating.', 4000);
       return;
     }
 
