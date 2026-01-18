@@ -12,9 +12,8 @@ class ErrorBoundaryInner extends React.Component<any, { hasError: boolean; error
   }
 
   componentDidCatch(error: Error, info: any) {
-    // You can log error to an external service here
-    // For now, rely on Toast via wrapper
-    console.error('Unhandled error caught by ErrorBoundary:', error, info);
+    // Error boundary caught an unhandled error
+    // Error reporting handled by toast wrapper
   }
 
   render() {

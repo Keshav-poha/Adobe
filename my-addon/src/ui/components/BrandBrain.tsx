@@ -1,12 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
-import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler, Upload } from 'lucide-react';
+import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler, Upload, AlertTriangle, Plus } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
 import { useToast } from './ToastNotification';
 import { useLanguage } from '../../context/LanguageContext';
+import { DocumentSandboxApi } from '../../models/DocumentSandboxApi';
+import addOnUISdk from "https://express.adobe.com/static/add-on-sdk/sdk.js";
 
-const BrandBrain: React.FC = () => {
+interface BrandBrainProps {
+  sandboxProxy?: DocumentSandboxApi;
+}
+
+const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
   const { t, language } = useLanguage();
   const [url, setUrl] = useState('');
   const [manualText, setManualText] = useState('');
@@ -14,233 +20,257 @@ const BrandBrain: React.FC = () => {
   const [inputMode, setInputMode] = useState<'url' | 'text' | 'image'>('image');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [progress, setProgress] = useState<string>('');
   const { brandData, setBrandData } = useBrand();
   const toast = useToast();
+  const [isPremiumUser, setIsPremiumUser] = useState<boolean | null>(null);
+  const [checkingPremium, setCheckingPremium] = useState(true);
+
+  // Check premium status on component mount
+  useEffect(() => {
+    const checkPremiumStatus = async () => {
+      try {
+        const premium = await addOnUISdk.app.currentUser.isPremiumUser();
+        setIsPremiumUser(premium);
+      } catch (error) {
+        // Silently default to non-premium if premium check fails
+        setIsPremiumUser(false);
+      } finally {
+        setCheckingPremium(false);
+      }
+    };
+
+    checkPremiumStatus();
+  }, []);
+
+  // Cancel ongoing extraction
+  const cancelExtraction = () => {
+    if (abortController) {
+      abortController.abort();
+      setAbortController(null);
+      setLoading(false);
+      setProgress('');
+      toast.showToast('info', t('extractionCancelled'), 3000);
+    }
+  };
+
+  // Validate URL format
+  const isValidUrl = (string: string): boolean => {
+    try {
+      new URL(string);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Validate file size and type
+  const validateImageFile = (file: File): string | null => {
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+    if (file.size > maxSize) {
+      return 'File size must be less than 10MB';
+    }
+
+    if (!allowedTypes.includes(file.type)) {
+      return t('invalidFileType');
+    }
+
+    return null;
+  };
 
   const handleExtract = async () => {
-    if (!url) return;
+    if (!url.trim()) {
+      setError(t('urlRequired'));
+      return;
+    }
 
+    if (!isValidUrl(url)) {
+      setError(t('invalidUrl'));
+      toast.showToast('error', t('invalidUrl'), 5000);
+      return;
+    }
+
+    const controller = new AbortController();
+    setAbortController(controller);
     setLoading(true);
     setError(null);
-    
+    setProgress(t('analyzingWebsite'));
+
     try {
-      // Validate URL format
-      let validUrl: URL;
-      try {
-        validUrl = new URL(url);
-      } catch {
-        throw new Error(t('invalidUrl'));
-      }
+      // Use Groq to analyze website content directly
+      const websiteContent = `Website URL: ${url}\n\nPlease analyze this website for brand identity. Extract colors, typography, messaging, and design patterns.`;
 
-      // Try multiple CORS proxies in sequence
-      const proxies = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-        `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
-      ];
+      setProgress(t('extractingBrandData'));
+      const extractedBrandData = await groqClient.extractBrandIdentity(websiteContent, language, undefined, controller.signal);
 
-      let htmlContent = '';
-      let lastError = null;
-
-      for (const proxyUrl of proxies) {
-        try {
-          const response = await fetch(proxyUrl, {
-            headers: {
-              'Accept': 'application/json, text/html'
-            }
-          });
-          
-          if (!response.ok) {
-            // Check for specific HTTP errors
-            if (response.status === 403) {
-              lastError = new Error('Website blocked the request (403 Forbidden)');
-            } else if (response.status === 404) {
-              lastError = new Error('Page not found (404)');
-            } else {
-              lastError = new Error(`HTTP ${response.status}`);
-            }
-            throw lastError;
-          }
-
-          // Handle different proxy response formats
-          const contentType = response.headers.get('content-type');
-          if (contentType?.includes('application/json')) {
-            const data = await response.json();
-            htmlContent = data.contents || data.data || '';
-          } else {
-            htmlContent = await response.text();
-          }
-
-          if (htmlContent) break; // Successfully fetched content
-        } catch (err) {
-          lastError = err;
-          // Continue to next proxy silently; surface if all proxies fail
-          continue; // Try next proxy
-        }
-      }
-
-      if (!htmlContent) {
-        const is403 = lastError?.message?.includes('403');
-        const errorMsg = is403
-          ? `This website blocks automated requests. Click "Paste Text" above and manually copy/paste content from ${validUrl.hostname}`
-          : `Unable to fetch website content. Try clicking "Paste Text" above to manually paste brand content instead.`;
-        throw new Error(errorMsg);
-      }
-
-      // Advanced web scraping to extract comprehensive brand data
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlContent, 'text/html');
-
-      // Extract structured brand information
-      const title = doc.querySelector('title')?.textContent?.trim() || '';
-      const metaDescription = doc.querySelector('meta[name="description"]')?.getAttribute('content') || '';
-      const metaKeywords = doc.querySelector('meta[name="keywords"]')?.getAttribute('content') || '';
-
-      // Extract headings for brand messaging
-      const headings = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-        .map(h => h.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .slice(0, 10); // Limit to first 10 headings
-
-      // Extract navigation and brand elements
-      const navText = Array.from(doc.querySelectorAll('nav, .nav, .navigation, .menu, .navbar'))
-        .map(el => el.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .join(' ');
-
-      // Extract footer content (often contains brand info)
-      const footerText = Array.from(doc.querySelectorAll('footer, .footer'))
-        .map(el => el.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .join(' ');
-
-      // Extract main content areas
-      const mainContent = Array.from(doc.querySelectorAll('main, .main, .content, article, .article'))
-        .map(el => el.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .join(' ');
-
-      // Extract CSS colors from inline styles and style tags
-      const colorMatches = htmlContent.match(/#[0-9a-fA-F]{3,6}|rgb\([^)]+\)|rgba\([^)]+\)|hsl\([^)]+\)|hsla\([^)]+\)/g) || [];
-      const uniqueColors = [...new Set(colorMatches)].slice(0, 20); // Limit to 20 unique colors
-
-      // Extract brand-related classes and IDs
-      const brandSelectors = Array.from(doc.querySelectorAll('[class*="brand"], [class*="logo"], [id*="brand"], [id*="logo"]'))
-        .map(el => el.textContent?.trim())
-        .filter(text => text && text.length > 0)
-        .join(' ');
-
-      // Combine all extracted content
-      const scrapedContent = {
-        title,
-        metaDescription,
-        metaKeywords,
-        headings: headings.join(' '),
-        navigation: navText,
-        footer: footerText,
-        mainContent,
-        colors: uniqueColors.join(', '),
-        brandElements: brandSelectors,
-        fullText: doc.body.textContent || ''
-      };
-
-      // Create comprehensive content string for AI analysis
-      const comprehensiveContent = `
-Website: ${url}
-Title: ${scrapedContent.title}
-Description: ${scrapedContent.metaDescription}
-Keywords: ${scrapedContent.metaKeywords}
-
-Headings: ${scrapedContent.headings}
-
-Navigation: ${scrapedContent.navigation}
-
-Brand Elements: ${scrapedContent.brandElements}
-
-Main Content: ${scrapedContent.mainContent}
-
-Footer: ${scrapedContent.footer}
-
-Detected Colors: ${scrapedContent.colors}
-
-Full Text Content: ${scrapedContent.fullText}
-      `.trim();
-
-      if (!comprehensiveContent.trim()) {
-        throw new Error('No content found on the page. Try a different URL.');
-      }
-
-      // Use Groq to analyze and extract brand identity from comprehensive scraped data
-      const extractedBrandData = await groqClient.extractBrandIdentity(comprehensiveContent, language);
-      
       setBrandData(extractedBrandData);
-      setLoading(false);
+      setProgress('');
+      toast.showToast('success', t('brandExtracted'), 4000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to extract brand data';
+      if (err instanceof Error && err.name === 'AbortError') {
+        // Request was cancelled
+        return;
+      }
+      const message = err instanceof Error ? err.message : t('extractionFailed');
       setError(message);
+      setProgress('');
       toast.showToast('error', message, 7000);
+    } finally {
       setLoading(false);
+      setAbortController(null);
+      setProgress('');
     }
   };
 
   const handleManualExtract = async () => {
-    if (!manualText.trim()) return;
+    if (!manualText.trim()) {
+      setError(t('textRequired'));
+      toast.showToast('error', t('textRequired'), 5000);
+      return;
+    }
 
+    if (manualText.trim().length < 10) {
+      setError(t('textTooShort'));
+      toast.showToast('error', t('textTooShort'), 5000);
+      return;
+    }
+
+    const controller = new AbortController();
+    setAbortController(controller);
     setLoading(true);
     setError(null);
-    
+    setProgress(t('analyzingText'));
+
     try {
-      // Use Groq to analyze and extract brand identity from manual text
-      const extractedBrandData = await groqClient.extractBrandIdentity(manualText, language);
-      
+      setProgress(t('extractingBrandData'));
+      const extractedBrandData = await groqClient.extractBrandIdentity(manualText, language, undefined, controller.signal);
+
       setBrandData(extractedBrandData);
-      setLoading(false);
+      setProgress('');
+      toast.showToast('success', t('brandExtracted'), 4000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to extract brand data';
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      const message = err instanceof Error ? err.message : t('extractionFailed');
       setError(message);
+      setProgress('');
       toast.showToast('error', message, 7000);
+    } finally {
       setLoading(false);
+      setAbortController(null);
+      setProgress('');
     }
   };
 
   const handleImageExtract = async () => {
-    if (!uploadedImage) return;
+    if (!uploadedImage) {
+      setError(t('imageRequired'));
+      return;
+    }
 
+    const validationError = validateImageFile(uploadedImage);
+    if (validationError) {
+      setError(validationError);
+      toast.showToast('error', validationError, 5000);
+      return;
+    }
+
+    const controller = new AbortController();
+    setAbortController(controller);
     setLoading(true);
     setError(null);
-    
-    try {
-      // Convert uploaded image to base64
-      const arrayBuffer = await uploadedImage.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      let binaryString = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < uint8Array.length; i += chunkSize) {
-        const chunk = uint8Array.subarray(i, i + chunkSize);
-        binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-      }
-      const base64 = btoa(binaryString);
+    setProgress(t('processingImage'));
 
-      // Use Groq to analyze and extract brand identity from image
-      const extractedBrandData = await groqClient.extractBrandIdentity('', language, base64);
-      
+    try {
+      // Convert image to base64 efficiently
+      setProgress(t('convertingImage'));
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(',')[1]); // Remove data:image/jpeg;base64, prefix
+        };
+        reader.onerror = () => reject(new Error(t('imageReadError')));
+        reader.readAsDataURL(uploadedImage);
+      });
+
+      setProgress(t('analyzingImage'));
+      const extractedBrandData = await groqClient.extractBrandIdentity('', language, base64, controller.signal);
       setBrandData(extractedBrandData);
-      setLoading(false);
+      setProgress('');
+      toast.showToast('success', t('brandExtracted'), 4000);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to extract brand data from image';
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      const message = err instanceof Error ? err.message : t('extractionFailed');
       setError(message);
+      setProgress('');
       toast.showToast('error', message, 7000);
+    } finally {
       setLoading(false);
+      setAbortController(null);
+      setProgress('');
     }
   };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      setUploadedImage(file);
-      setError(null);
-    } else {
-      setError('Please select a valid image file');
+    if (!file) return;
+
+    const validationError = validateImageFile(file);
+    if (validationError) {
+      setError(validationError);
+      toast.showToast('error', validationError, 5000);
+      return;
+    }
+
+    setUploadedImage(file);
+    setError(null);
+    toast.showToast('success', t('imageUploaded'), 3000);
+  };
+
+  const applyBrandColorsToDocument = async () => {
+    // Check premium status before applying colors
+    if (!isPremiumUser) {
+      toast.showToast('error', 'Adding colors to document is a premium feature. Please upgrade to Adobe Express Premium to use this feature.', 7000);
+      return;
+    }
+
+    if (!brandData?.primaryColors || brandData.primaryColors.length === 0 || !sandboxProxy) {
+      toast.showToast('error', t('noBrandDataOrSandbox'), 5000);
+      return;
+    }
+
+    try {
+      // Create rectangles for each brand color
+      const colors = brandData.primaryColors.slice(0, 5); // Limit to 5 colors
+      const rectWidth = 100;
+      const rectHeight = 100;
+      const spacing = 20;
+      let xOffset = 50;
+
+      for (const color of colors) {
+        await sandboxProxy.createRectangle({
+          x: xOffset,
+          y: 50,
+          width: rectWidth,
+          height: rectHeight,
+          fillColor: color,
+          strokeColor: '#000000',
+          strokeWidth: 1
+        });
+        xOffset += rectWidth + spacing;
+      }
+
+      toast.showToast('success', t('colorsAppliedToDocument'), 4000);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('documentUpdateFailed');
+      toast.showToast('error', message, 7000);
     }
   };
 
@@ -321,12 +351,15 @@ Full Text Content: ${scrapedContent.fullText}
           marginBottom: 'var(--spectrum-spacing-200)',
           fontStyle: 'italic'
         }}>
-          Note: Website analysis sometimes provides inaccurate results
+          {t('urlNote')}
         </p>
         <input
           type="url"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            if (error) setError(null); // Clear error on input change
+          }}
           placeholder="https://example.com"
           disabled={loading}
           style={{
@@ -335,24 +368,24 @@ Full Text Content: ${scrapedContent.fullText}
             fontSize: 'var(--spectrum-font-size-100)',
             fontFamily: 'adobe-clean, sans-serif',
             backgroundColor: 'var(--spectrum-background-layer-1)',
-            border: '1px solid var(--spectrum-border-color)',
+            border: `1px solid ${error ? 'var(--spectrum-negative-color)' : 'var(--spectrum-border-color)'}`,
             borderRadius: 'var(--spectrum-corner-radius-100)',
             color: 'var(--spectrum-text-body)',
             outline: 'none',
             transition: 'border-color 0.13s ease-out',
           }}
           onFocus={(e) => {
-            e.currentTarget.style.borderColor = '#FA0';
+            e.currentTarget.style.borderColor = error ? 'var(--spectrum-negative-color)' : '#FA0';
           }}
           onBlur={(e) => {
-            e.currentTarget.style.borderColor = 'var(--spectrum-border-color)';
+            e.currentTarget.style.borderColor = error ? 'var(--spectrum-negative-color)' : 'var(--spectrum-border-color)';
           }}
         />
 
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--spectrum-spacing-300)' }}>
           <button
             onClick={handleExtract}
-            disabled={!url || loading}
+            disabled={!url.trim() || loading}
             style={{
               padding: 'var(--spectrum-spacing-200) var(--spectrum-spacing-400)',
               fontSize: 'var(--spectrum-font-size-100)',
@@ -362,23 +395,46 @@ Full Text Content: ${scrapedContent.fullText}
               color: '#fff',
               border: 'none',
               borderRadius: 'var(--spectrum-corner-radius-100)',
-              cursor: loading || !url ? 'not-allowed' : 'pointer',
+              cursor: loading || !url.trim() ? 'not-allowed' : 'pointer',
               transition: 'all 0.13s ease-out',
-              opacity: loading || !url ? 0.5 : 1,
+              opacity: loading || !url.trim() ? 0.5 : 1,
             }}
           onMouseEnter={(e) => {
-            if (!loading && url) {
+            if (!loading && url.trim()) {
               e.currentTarget.style.backgroundColor = '#5078FE';
             }
           }}
           onMouseLeave={(e) => {
-            if (!loading && url) {
+            if (!loading && url.trim()) {
               e.currentTarget.style.backgroundColor = '#4069FD';
             }
           }}
         >
           {loading ? (
-            <>{t('extracting')}</>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <ProgressCircle size="small" />
+              <div style={{ fontSize: 'var(--spectrum-body-xs-text-size)', color: 'var(--spectrum-text-secondary)' }}>
+                {progress || t('extracting')}
+              </div>
+              {abortController && (
+                <button
+                  onClick={cancelExtraction}
+                  style={{
+                    padding: '3px 9px',
+                    fontSize: 'var(--spectrum-body-xs-text-size)',
+                    fontWeight: 500,
+                    backgroundColor: 'var(--spectrum-red-600)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: 'var(--spectrum-corner-radius-100)',
+                    cursor: 'pointer',
+                    marginTop: '4px'
+                  }}
+                >
+                  {t('cancel')}
+                </button>
+              )}
+            </div>
           ) : (
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
               <Sparkles size={16} />
@@ -401,9 +457,20 @@ Full Text Content: ${scrapedContent.fullText}
         }}>
           {t('brandText')}
         </label>
+        <p style={{
+          fontSize: 'var(--spectrum-body-xs-text-size)',
+          color: 'var(--spectrum-gray-600)',
+          marginBottom: 'var(--spectrum-spacing-200)',
+          fontStyle: 'italic'
+        }}>
+          {t('manualNote')}
+        </p>
         <textarea
           value={manualText}
-          onChange={(e) => setManualText(e.target.value)}
+          onChange={(e) => {
+            setManualText(e.target.value);
+            if (error) setError(null); // Clear error on input change
+          }}
           placeholder={t('brandTextPlaceholder')}
           disabled={loading}
           rows={8}
@@ -413,7 +480,7 @@ Full Text Content: ${scrapedContent.fullText}
             fontSize: 'var(--spectrum-font-size-100)',
             fontFamily: 'adobe-clean, sans-serif',
             backgroundColor: 'var(--spectrum-background-layer-1)',
-            border: '1px solid var(--spectrum-border-color)',
+            border: `1px solid ${error ? 'var(--spectrum-negative-color)' : 'var(--spectrum-border-color)'}`,
             borderRadius: 'var(--spectrum-corner-radius-100)',
             color: 'var(--spectrum-text-body)',
             outline: 'none',
@@ -421,10 +488,10 @@ Full Text Content: ${scrapedContent.fullText}
             resize: 'vertical',
           }}
           onFocus={(e) => {
-            e.currentTarget.style.borderColor = '#FA0';
+            e.currentTarget.style.borderColor = error ? 'var(--spectrum-negative-color)' : '#FA0';
           }}
           onBlur={(e) => {
-            e.currentTarget.style.borderColor = 'var(--spectrum-border-color)';
+            e.currentTarget.style.borderColor = error ? 'var(--spectrum-negative-color)' : 'var(--spectrum-border-color)';
           }}
         />
 
@@ -478,10 +545,18 @@ Full Text Content: ${scrapedContent.fullText}
           color: 'var(--spectrum-label-color)',
           marginBottom: 'var(--spectrum-spacing-100)'
         }}>
-          Upload Brand Screenshot
+          {t('uploadScreenshot')}
         </label>
+        <p style={{
+          fontSize: 'var(--spectrum-body-xs-text-size)',
+          color: 'var(--spectrum-gray-600)',
+          marginBottom: 'var(--spectrum-spacing-200)',
+          fontStyle: 'italic'
+        }}>
+          {t('imageNote')}
+        </p>
         <div style={{
-          border: '2px dashed var(--spectrum-border-color)',
+          border: `2px dashed ${error ? 'var(--spectrum-negative-color)' : 'var(--spectrum-border-color)'}`,
           borderRadius: 'var(--spectrum-corner-radius-100)',
           padding: 'var(--spectrum-spacing-400)',
           textAlign: 'center',
@@ -499,20 +574,20 @@ Full Text Content: ${scrapedContent.fullText}
             id="image-upload"
           />
           <label htmlFor="image-upload" style={{ cursor: loading ? 'not-allowed' : 'pointer' }}>
-            <Upload size={32} color="#4069FD" style={{ marginBottom: 'var(--spectrum-spacing-200)' }} />
+            <Upload size={32} color={error ? 'var(--spectrum-negative-color)' : '#4069FD'} style={{ marginBottom: 'var(--spectrum-spacing-200)' }} />
             <p style={{
-              fontSize: 'var(--spectrum-body-text-size)',
+              fontSize: 'var(--spectrum-body-xs-text-size)',
               color: 'var(--spectrum-body-color)',
               margin: '0 0 var(--spectrum-spacing-100) 0',
             }}>
-              {uploadedImage ? uploadedImage.name : 'Click to upload brand screenshot'}
+              {uploadedImage ? uploadedImage.name : t('clickToUpload')}
             </p>
             <p style={{
               fontSize: 'var(--spectrum-body-xs-text-size)',
               color: 'var(--spectrum-gray-600)',
               margin: 0,
             }}>
-              PNG, JPG, JPEG up to 10MB
+              {t('imageFormats')}
             </p>
           </label>
         </div>
@@ -568,7 +643,7 @@ Full Text Content: ${scrapedContent.fullText}
         }}>
           <p style={{ 
             margin: 0,
-            fontSize: 'var(--spectrum-body-s-text-size)',
+            fontSize: 'var(--spectrum-body-xs-text-size)',
             color: 'var(--spectrum-red-900)'
           }}>
             {error}
@@ -584,7 +659,7 @@ Full Text Content: ${scrapedContent.fullText}
           border: '1px solid var(--spectrum-border-color)',
         }}>
           <h3 style={{ 
-            fontSize: 'var(--spectrum-heading-l-text-size)',
+            fontSize: 'var(--spectrum-heading-s-text-size)',
             fontWeight: 700,
             color: 'var(--spectrum-heading-color)',
             margin: '0 0 var(--spectrum-spacing-300) 0',
@@ -608,7 +683,7 @@ Full Text Content: ${scrapedContent.fullText}
           {/* Primary Colors */}
           <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
             <h4 style={{ 
-              fontSize: 'var(--spectrum-heading-m-text-size)',
+              fontSize: 'var(--spectrum-heading-s-text-size)',
               fontWeight: 600,
               color: 'var(--spectrum-heading-color)',
               margin: '0 0 var(--spectrum-spacing-200) 0',
@@ -654,11 +729,47 @@ Full Text Content: ${scrapedContent.fullText}
             </div>
           </div>
 
+          {/* Apply to Document Button */}
+          {sandboxProxy && (
+            <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
+              <button
+                onClick={applyBrandColorsToDocument}
+                style={{
+                  padding: 'var(--spectrum-spacing-200) var(--spectrum-spacing-400)',
+                  fontSize: 'var(--spectrum-body-xs-text-size)',
+                  fontWeight: 600,
+                  fontFamily: 'adobe-clean, sans-serif',
+                  backgroundColor: '#4069FD',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 'var(--spectrum-corner-radius-100)',
+                  cursor: 'pointer',
+                  transition: 'all 0.13s ease-out',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--spectrum-spacing-200)',
+                  boxShadow: '0 2px 8px rgba(64, 105, 253, 0.3)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = '#2c5ce6';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(64, 105, 253, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = '#4069FD';
+                  e.currentTarget.style.boxShadow = '0 2px 8px rgba(64, 105, 253, 0.3)';
+                }}
+              >
+                <Plus size={16} />
+                {t('applyToDocument')}
+              </button>
+            </div>
+          )}
+
           {/* Brand Voice */}
           {brandData.brandVoice && (
             <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
               <h4 style={{ 
-                fontSize: 'var(--spectrum-heading-m-text-size)',
+                fontSize: 'var(--spectrum-heading-s-text-size)',
                 fontWeight: 600,
                 color: 'var(--spectrum-heading-color)',
                 margin: '0 0 var(--spectrum-spacing-200) 0',
@@ -688,7 +799,7 @@ Full Text Content: ${scrapedContent.fullText}
           {brandData.designGuidelines.length > 0 && (
             <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
               <h4 style={{ 
-                fontSize: 'var(--spectrum-heading-m-text-size)',
+                fontSize: 'var(--spectrum-heading-s-text-size)',
                 fontWeight: 600,
                 color: 'var(--spectrum-heading-color)',
                 margin: '0 0 var(--spectrum-spacing-200) 0',
@@ -719,7 +830,7 @@ Full Text Content: ${scrapedContent.fullText}
           {brandData.typography && (
             <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
               <h4 style={{ 
-                fontSize: 'var(--spectrum-heading-m-text-size)',
+                fontSize: 'var(--spectrum-heading-s-text-size)',
                 fontWeight: 600,
                 color: 'var(--spectrum-heading-color)',
                 margin: '0 0 var(--spectrum-spacing-200) 0',
@@ -734,7 +845,7 @@ Full Text Content: ${scrapedContent.fullText}
                 padding: 'var(--spectrum-spacing-200)',
                 backgroundColor: 'var(--spectrum-background-layer-1)',
                 borderRadius: 'var(--spectrum-corner-radius-100)',
-                fontSize: 'var(--spectrum-body-s-text-size)',
+                fontSize: 'var(--spectrum-body-xs-text-size)',
                 color: 'var(--spectrum-body-color)',
                 lineHeight: 1.6
               }}>
@@ -756,7 +867,7 @@ Full Text Content: ${scrapedContent.fullText}
           {brandData.spacing && (
             <div style={{ marginBottom: 'var(--spectrum-spacing-400)' }}>
               <h4 style={{ 
-                fontSize: 'var(--spectrum-heading-m-text-size)',
+                fontSize: 'var(--spectrum-heading-s-text-size)',
                 fontWeight: 600,
                 color: 'var(--spectrum-heading-color)',
                 margin: '0 0 var(--spectrum-spacing-200) 0',
@@ -771,7 +882,7 @@ Full Text Content: ${scrapedContent.fullText}
                 padding: 'var(--spectrum-spacing-200)',
                 backgroundColor: 'var(--spectrum-background-layer-1)',
                 borderRadius: 'var(--spectrum-corner-radius-100)',
-                fontSize: 'var(--spectrum-body-s-text-size)',
+                fontSize: 'var(--spectrum-body-xs-text-size)',
                 color: 'var(--spectrum-body-color)',
                 lineHeight: 1.6
               }}>
@@ -789,7 +900,7 @@ Full Text Content: ${scrapedContent.fullText}
           {brandData.layoutPatterns && brandData.layoutPatterns.length > 0 && (
             <div>
               <h4 style={{ 
-                fontSize: 'var(--spectrum-heading-m-text-size)',
+                fontSize: 'var(--spectrum-heading-s-text-size)',
                 fontWeight: 600,
                 color: 'var(--spectrum-heading-color)',
                 margin: '0 0 var(--spectrum-spacing-200) 0',

@@ -40,7 +40,7 @@ export const ProgressCircle: React.FC<ProgressCircleProps> = ({
         />
         {label && (
           <span style={{
-            fontSize: 'var(--spectrum-body-s-text-size)',
+            fontSize: 'var(--spectrum-body-xs-text-size)',
             color: 'var(--spectrum-gray-700)'
           }}>
             {label}
@@ -86,7 +86,7 @@ export const ProgressCircle: React.FC<ProgressCircleProps> = ({
       </svg>
       {label && (
         <span style={{
-          fontSize: 'var(--spectrum-body-s-text-size)',
+          fontSize: 'var(--spectrum-body-xs-text-size)',
           color: 'var(--spectrum-gray-700)'
         }}>
           {label}
@@ -248,23 +248,24 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       {action && (
         <button
           onClick={action.onClick}
+          className="spectrum-button"
           style={{
             padding: 'var(--spectrum-spacing-200) var(--spectrum-spacing-400)',
-            fontSize: 'var(--spectrum-body-text-size)',
+            fontSize: 'var(--spectrum-font-size-100)',
             fontWeight: 600,
             fontFamily: 'adobe-clean, sans-serif',
-            backgroundColor: '#4069FD',
+            backgroundColor: '#00719f',
             color: '#fff',
             border: 'none',
             borderRadius: 'var(--spectrum-corner-radius-100)',
             cursor: 'pointer',
-            transition: 'background-color 0.13s ease-out'
+            transition: 'all 0.13s ease-out',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = '#5078FE';
+            e.currentTarget.style.backgroundColor = '#095aba';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = '#4069FD';
+            e.currentTarget.style.backgroundColor = '#00719f';
           }}
         >
           {action.label}

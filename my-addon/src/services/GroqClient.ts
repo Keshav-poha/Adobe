@@ -44,6 +44,113 @@ class GroqClient {
   }
 
   /**
+   * Check if the user is online
+   */
+  private isOnline(): boolean {
+    return typeof navigator !== 'undefined' && navigator.onLine;
+  }
+
+  /**
+   * Categorize network errors for better user feedback
+   */
+  private categorizeError(error: any): { message: string; isRetryable: boolean } {
+    if (!this.isOnline()) {
+      return { message: 'No internet connection. Please check your network and try again.', isRetryable: true };
+    }
+
+    if (error?.status === 429) {
+      return { message: 'Too many requests. Please wait a moment and try again.', isRetryable: true };
+    }
+
+    if (error?.status === 401) {
+      return { message: 'API key is invalid or expired. Please check your settings.', isRetryable: false };
+    }
+
+    if (error?.status === 403) {
+      return { message: 'Access denied. Please check your API key permissions.', isRetryable: false };
+    }
+
+    if (error?.status >= 500) {
+      return { message: 'Server error. Please try again in a few moments.', isRetryable: true };
+    }
+
+    if (error?.code === 'ECONNABORTED' || error?.message?.includes('timeout')) {
+      return { message: 'Request timed out. Please try again.', isRetryable: true };
+    }
+
+    return { message: error?.message || 'An unexpected error occurred. Please try again.', isRetryable: true };
+  }
+
+  /**
+   * Retry utility for API calls with exponential backoff
+   */
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> {
+    let lastError: Error;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Use error categorization to determine if we should retry
+        const { message, isRetryable } = this.categorizeError(error);
+        
+        // Create a new error with the categorized message
+        const categorizedError = new Error(message);
+        (categorizedError as any).originalError = lastError;
+        (categorizedError as any).isRetryable = isRetryable;
+
+        // Don't retry on non-retryable errors
+        if (!isRetryable) {
+          throw categorizedError;
+        }
+
+        // If this was the last attempt, throw the categorized error
+        if (attempt === maxRetries) {
+          throw categorizedError;
+        }
+
+        // Wait before retrying with exponential backoff
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError!;
+  }
+
+  /**
+   * Simple in-memory cache for API responses
+   */
+  private cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+
+  /**
+   * Get cached data if available and not expired
+   */
+  private getCachedData(key: string): any | null {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.data;
+    }
+    if (cached) {
+      this.cache.delete(key); // Remove expired cache
+    }
+    return null;
+  }
+
+  /**
+   * Set cached data with TTL (time to live in milliseconds)
+   */
+  private setCachedData(key: string, data: any, ttl: number = 30 * 60 * 1000): void { // Default 30 minutes
+    this.cache.set(key, { data, timestamp: Date.now(), ttl });
+  }
+
+  /**
    * Set the Groq API key at runtime and initialize the SDK client.
    */
   setApiKey(apiKey: string) {
@@ -68,40 +175,50 @@ class GroqClient {
   }
 
   /**
-   * Extract brand identity with improved color analysis
+   * Extract brand identity with improved error handling
    */
   async extractBrandIdentity(
     websiteContent: string, 
     language: string = 'en',
-    screenshot?: string
+    screenshot?: string,
+    signal?: AbortSignal
   ): Promise<BrandData> {
+    // Create cache key based on input parameters
+    const cacheKey = `brand_${language}_${screenshot ? 'with_image' : 'text_only'}_${btoa(websiteContent).slice(0, 50)}`;
+    
+    // Check cache first
+    const cachedResult = this.getCachedData(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
+
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
-    // Extract website URL from content for AI scraping
-    const urlMatch = websiteContent.match(/Website:\s*(https?:\/\/[^\s\n]+)/i);
-    const websiteUrl = urlMatch ? urlMatch[1] : websiteContent.split('\n')[0].replace('Website: ', '');
-    
     try {
-      const prompt = `You are a web scraping and brand analysis expert. Access the website at: ${websiteContent.split('\n')[0].replace('Website: ', '')}
+      // Determine which model to use based on input type
+      const useVisionModel = !!screenshot;
+      const modelToUse = useVisionModel ? this.VISION_MODEL : this.TEXT_MODEL;
+      
+      let prompt: string;
+      const messages: any[] = [
+        {
+          role: 'system',
+          content: 'You are a brand analysis expert. Return only valid JSON. No markdown. No explanations.'
+        },
+      ];
 
-Perform comprehensive web scraping and brand analysis. Return ONLY valid JSON, no markdown, no explanations. Provide all text fields in ${responseLang}.
-
-SCRAPING INSTRUCTIONS:
-1. Access the website URL provided above
-2. Extract CSS colors, fonts, and visual elements
-3. Analyze the live website for brand colors, typography, and design patterns
-4. Cross-reference with known brand databases for accuracy
+      if (screenshot) {
+        // Use vision model with screenshot for accurate color extraction
+        prompt = `Analyze this brand screenshot and extract the brand identity. Return ONLY valid JSON in ${responseLang}.
 
 ANALYSIS REQUIREMENTS:
-1. primaryColors: EXACTLY 3-5 hex codes from the website's actual color scheme. Scrape CSS, analyze brand elements, verify against official brand colors.
-2. brandVoice: EXACTLY 2-3 sentences describing target audience, values, and differentiator based on website content.
-3. designGuidelines: EXACTLY 4 observable design patterns from the live website.
-4. typography: Extract actual fonts, weights, and styles used on the website${screenshot ? ' (supplement with screenshot analysis)' : ''}.
-5. spacing: Identify spacing system from the website's CSS/layout${screenshot ? ' visible in the layout' : ''}.
-6. layoutPatterns: 2-3 key layout approaches observed on the live website${screenshot ? ' and screenshot' : ''}.
-
-WEB SCRAPING FOCUS: Access the website directly, extract real colors from CSS/styling, analyze actual fonts and typography in use, verify brand authenticity.
+1. primaryColors: EXACTLY 3-5 hex color codes from the most prominent brand colors in the image
+2. brandVoice: 2-3 sentences describing the brand's personality and target audience based on visual elements
+3. designGuidelines: EXACTLY 4 key design patterns observed in the screenshot
+4. typography: Font styles and weights visible in the image
+5. spacing: Spacing patterns observed in the layout
+6. layoutPatterns: 2-3 layout approaches used in the design
 
 REQUIRED FORMAT:
 {
@@ -109,29 +226,18 @@ REQUIRED FORMAT:
   "brandVoice": "Sentence 1. Sentence 2. Sentence 3.",
   "designGuidelines": ["Pattern 1", "Pattern 2", "Pattern 3", "Pattern 4"],
   "typography": {
-    "primaryFont": "Actual font name from website",
-    "secondaryFont": "Actual font name from website", 
+    "primaryFont": "Font family observed",
+    "secondaryFont": "Secondary font if visible", 
     "fontWeights": ["400", "600", "700"],
-    "headingStyle": "Actual heading styles observed"
+    "headingStyle": "Heading styles observed"
   },
   "spacing": {
-    "baseUnit": "Actual spacing unit from CSS",
-    "scale": "Actual scale system observed"
+    "baseUnit": "8px",
+    "scale": "4px, 8px, 16px, 24px, 32px"
   },
-  "layoutPatterns": ["Actual layout patterns observed"]
-}
+  "layoutPatterns": ["Grid-based", "Centered content", "Card layouts"]
+}`;
 
-Scrape the live website for accurate brand analysis.`;
-
-      const messages: any[] = [
-        {
-          role: 'system',
-          content: 'You are a JSON extraction bot. Return only valid JSON. No markdown. No explanations.'
-        },
-      ];
-
-      if (screenshot) {
-        // Use vision model with screenshot
         messages.push({
           role: 'user',
           content: [
@@ -140,6 +246,38 @@ Scrape the live website for accurate brand analysis.`;
           ],
         });
       } else {
+        // Use text model for URL/website content analysis
+        prompt = `Analyze the brand from this website content and extract brand identity. Return ONLY valid JSON in ${responseLang}.
+
+WEBSITE CONTENT:
+${websiteContent}
+
+ANALYSIS REQUIREMENTS:
+1. primaryColors: EXACTLY 3-5 hex color codes that would represent this brand's color scheme
+2. brandVoice: 2-3 sentences describing the brand's personality and target audience
+3. designGuidelines: EXACTLY 4 key design principles for this brand
+4. typography: Recommended typography system for this brand
+5. spacing: Recommended spacing system for this brand
+6. layoutPatterns: 2-3 recommended layout approaches for this brand
+
+REQUIRED FORMAT:
+{
+  "primaryColors": ["#HEXCOD", "#HEXCOD", "#HEXCOD"],
+  "brandVoice": "Sentence 1. Sentence 2. Sentence 3.",
+  "designGuidelines": ["Pattern 1", "Pattern 2", "Pattern 3", "Pattern 4"],
+  "typography": {
+    "primaryFont": "Recommended primary font",
+    "secondaryFont": "Recommended secondary font", 
+    "fontWeights": ["400", "600", "700"],
+    "headingStyle": "Recommended heading style"
+  },
+  "spacing": {
+    "baseUnit": "8px",
+    "scale": "4px, 8px, 16px, 24px, 32px"
+  },
+  "layoutPatterns": ["Recommended layout pattern 1", "Recommended layout pattern 2"]
+}`;
+
         messages.push({
           role: 'user',
           content: prompt,
@@ -148,12 +286,14 @@ Scrape the live website for accurate brand analysis.`;
 
       const client = this.ensureClient();
 
-      const completion = await client.chat.completions.create({
-        messages,
-        model: this.VISION_MODEL, // Always use vision model for superior color analysis capabilities
-        temperature: 0.0,
-        max_tokens: 1024,
-        response_format: ({ type: 'json_object' } as any), // Vision model can handle JSON responses
+      const completion = await this.retryWithBackoff(async () => {
+        return client.chat.completions.create({
+          messages,
+          model: modelToUse,
+          temperature: 0.1,
+          max_tokens: 1024,
+          response_format: ({ type: 'json_object' } as any),
+        });
       });
 
       const responseText = completion.choices[0]?.message?.content || '{}';
@@ -166,76 +306,47 @@ Scrape the live website for accurate brand analysis.`;
 
       const brandData = JSON.parse(cleanedResponse) as BrandData;
 
-      // Strict validation with normalization
+      // Validate required fields
       if (!brandData.primaryColors || !Array.isArray(brandData.primaryColors) || brandData.primaryColors.length < 3) {
-        // Use default professional colors when AI scraping fails
-        brandData.primaryColors = ['#1A73E8', '#34A853', '#FBBC04'];
+        throw new Error('Invalid brand analysis: missing or insufficient primary colors');
       }
-      
-      // Normalize hex codes to uppercase and validate format
-      brandData.primaryColors = brandData.primaryColors
-        .slice(0, 5)
-        .map(c => {
-          if (c.startsWith('#') && c.length >= 4) {
-            return c.toUpperCase();
-          } else if (c.startsWith('#')) {
-            return '#1A73E8'; // Invalid hex, use default
-          } else {
-            return c; // Keep named colors or rgb values
-          }
-        });
-      
-      if (!brandData.brandVoice || brandData.brandVoice.length < 50) {
-        brandData.brandVoice = 'Modern professional brand. Focused on innovation and user-centric design. Appeals to tech-savvy audiences.';
+
+      // Validate and normalize color formats
+      brandData.primaryColors = brandData.primaryColors.slice(0, 5).map(c => {
+        if (typeof c !== 'string' || c.trim() === '') {
+          throw new Error('Invalid color format in brand analysis');
+        }
+        // Ensure hex format
+        const hexColor = c.startsWith('#') ? c : `#${c}`;
+        return hexColor.toUpperCase();
+      });
+
+      if (!brandData.brandVoice || typeof brandData.brandVoice !== 'string' || brandData.brandVoice.trim().length < 20) {
+        throw new Error('Invalid brand analysis: insufficient brand voice description');
       }
-      
+
       if (!brandData.designGuidelines || !Array.isArray(brandData.designGuidelines) || brandData.designGuidelines.length < 4) {
-        brandData.designGuidelines = ['Consistent spacing system', 'Clear color hierarchy', 'Accessible typography', 'Minimalist aesthetics'];
+        throw new Error('Invalid brand analysis: insufficient design guidelines');
       }
-      
-      // Ensure exactly 4 guidelines
+
+      // Trim to expected sizes
       brandData.designGuidelines = brandData.designGuidelines.slice(0, 4);
 
-      // Set defaults for new fields if missing
-      if (!brandData.typography) {
-        brandData.typography = {
-          primaryFont: 'Sans-serif',
-          secondaryFont: 'Sans-serif',
-          fontWeights: ['400', '600', '700'],
-          headingStyle: 'Bold and large'
-        };
-      }
-
-      if (!brandData.spacing) {
-        brandData.spacing = {
-          baseUnit: '8px',
-          scale: '1.5 ratio'
-        };
-      }
-
-      if (!brandData.layoutPatterns || !Array.isArray(brandData.layoutPatterns)) {
-        brandData.layoutPatterns = ['Grid-based layout', 'Card components', 'Centered content'];
-      }
-
-      // Store screenshot if provided
+      // Preserve optional fields only if provided by AI
       if (screenshot) {
         brandData.websiteScreenshot = screenshot;
       }
 
+      // Cache the result for future use
+      this.setCachedData(cacheKey, brandData);
+
       return brandData;
     } catch (error) {
-      console.error('Error extracting brand identity:', error);
-      // Return strict fallback data
-      return {
-        primaryColors: ['#1A73E8', '#34A853', '#FBBC04'],
-        brandVoice: 'Modern professional brand. Focused on innovation and user-centric design. Appeals to tech-savvy audiences.',
-        designGuidelines: [
-          'Consistent spacing system',
-          'Clear color hierarchy',
-          'Accessible typography',
-          'Minimalist aesthetics',
-        ],
-      };
+      // Re-throw validation errors with user-friendly messages
+      if (error instanceof Error) {
+        throw new Error(`Brand analysis failed: ${error.message}`);
+      }
+      throw new Error('Brand analysis failed: Unable to process the provided content. Please try again.');
     }
   }
 
@@ -261,22 +372,31 @@ Include: style, composition, lighting, mood, brand colors. Be specific and direc
 
       const client = this.ensureClient();
 
-      const completion = await client.chat.completions.create({
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        model: this.TEXT_MODEL,
-        temperature: 0.2,
-        max_tokens: 200,
+      const completion = await this.retryWithBackoff(async () => {
+        return client.chat.completions.create({
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          model: this.TEXT_MODEL,
+          temperature: 0.2,
+          max_tokens: 200,
+        });
       });
 
-      return completion.choices[0]?.message?.content || `${trend} design with ${brandContext.primaryColors.slice(0, 3).join(', ')} colors, ${brandContext.brandVoice.split('.')[0].toLowerCase()}`;
+      const result = completion.choices[0]?.message?.content;
+      if (!result || typeof result !== 'string' || result.trim().length < 10) {
+        throw new Error('Invalid response from Firefly prompt generator');
+      }
+      return result;
     } catch (error) {
-      console.error('Error generating Firefly prompt:', error);
-      return `${trend} design with ${brandContext.primaryColors.slice(0, 3).join(', ')} colors, ${brandContext.brandVoice.split('.')[0].toLowerCase()}`;
+      // Re-throw with user-friendly message instead of logging
+      if (error instanceof Error) {
+        throw new Error(`Firefly prompt generation failed: ${error.message}`);
+      }
+      throw new Error('Firefly prompt generation failed: Unable to generate creative prompt. Please try again.');
     }
   }
 
@@ -331,16 +451,18 @@ Return ONLY the JSON array, no markdown formatting or additional text.`;
 
       const client = this.ensureClient();
 
-      const completion = await client.chat.completions.create({
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        model: this.TEXT_MODEL,
-        temperature: 0.3,
-        max_tokens: 1024,
+      const completion = await this.retryWithBackoff(async () => {
+        return client.chat.completions.create({
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          model: this.TEXT_MODEL,
+          temperature: 0.3,
+          max_tokens: 1024,
+        });
       });
 
       const responseText = completion.choices[0]?.message?.content || '[]';
@@ -360,16 +482,11 @@ Return ONLY the JSON array, no markdown formatting or additional text.`;
 
       return trends;
     } catch (error) {
-      console.error('Error fetching viral trends:', error);
-      // Return fallback trends
-      return [
-        { id: 'minimalist', name: 'Minimalist', desc: 'Clean, simple designs with white space' },
-        { id: 'bold-typography', name: 'Bold Typography', desc: 'Large, impactful text' },
-        { id: 'gradient', name: 'Gradient Fusion', desc: 'Modern color blends' },
-        { id: 'valentines', name: "Valentine's Day", desc: 'Romantic themes for Feb 14' },
-        { id: '3d-render', name: '3D Elements', desc: 'Depth with realistic renders' },
-        { id: 'glassmorphism', name: 'Glassmorphism', desc: 'Frosted glass aesthetics' },
-      ];
+      // Re-throw with user-friendly message instead of logging
+      if (error instanceof Error) {
+        throw new Error(`Trend analysis failed: ${error.message}`);
+      }
+      throw new Error('Trend analysis failed: Unable to fetch current trends. Please try again.');
     }
   }
 
@@ -381,6 +498,17 @@ Return ONLY the JSON array, no markdown formatting or additional text.`;
     brandGuidelines: BrandData,
     language: string = 'en'
   ): Promise<VisionAnalysis> {
+    // Create cache key based on image hash and brand colors (as a proxy for brand identity)
+    const imageHash = btoa(imageBase64).slice(0, 20);
+    const brandHash = brandGuidelines.primaryColors.join('_');
+    const cacheKey = `design_${language}_${imageHash}_${brandHash}`;
+    
+    // Check cache first
+    const cachedResult = this.getCachedData(cacheKey);
+    if (cachedResult) {
+      return cachedResult;
+    }
+
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     try {
@@ -449,20 +577,22 @@ Return ONLY valid JSON:
 
       const client = this.ensureClient();
 
-      const completion = await client.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a professional design auditor conducting thorough brand compliance reviews. Analyze designs objectively against brand guidelines. Provide specific, actionable feedback. Be fair but firm in your assessments.'
-          },
-          {
-            role: 'user',
-            content: contentParts,
-          },
-        ],
-        model: this.VISION_MODEL,
-        temperature: 0.2,
-        max_tokens: 1500,
+      const completion = await this.retryWithBackoff(async () => {
+        return client.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a professional design auditor conducting thorough brand compliance reviews. Analyze designs objectively against brand guidelines. Provide specific, actionable feedback. Be fair but firm in your assessments.'
+            },
+            {
+              role: 'user',
+              content: contentParts,
+            },
+          ],
+          model: this.VISION_MODEL,
+          temperature: 0.2,
+          max_tokens: 1500,
+        });
       });
 
       const responseText = completion.choices[0]?.message?.content || '{}';
@@ -482,29 +612,32 @@ Return ONLY valid JSON:
       };
 
       // Ensure valid response structure
-      return {
+      const result = {
         score: clampScore(analysis.score, 50),
         colorConsistency: clampScore(analysis.colorConsistency, 50),
         typographyScale: clampScore(analysis.typographyScale, 50),
         spacingRhythm: clampScore(analysis.spacingRhythm, 50),
         accessibility: clampScore(analysis.accessibility, 50),
-        feedback: Array.isArray(analysis.feedback) && analysis.feedback.length > 0 
-          ? analysis.feedback.slice(0, 5) 
+        feedback: Array.isArray(analysis.feedback) && analysis.feedback.length > 0
+          ? analysis.feedback.slice(0, 5)
           : ['Design analysis completed. Review metrics for details.'],
-        recommendations: Array.isArray(analysis.recommendations) && analysis.recommendations.length > 0 
-          ? analysis.recommendations.slice(0, 5) 
+        recommendations: Array.isArray(analysis.recommendations) && analysis.recommendations.length > 0
+          ? analysis.recommendations.slice(0, 5)
           : ['Continue refining design based on brand guidelines.'],
       };
+
+      // Cache the result for future use
+      this.setCachedData(cacheKey, result);
+
+      return result;
+
+      return result;
     } catch (error) {
-      console.error('Error analyzing design:', error);
-      console.error('Error details:', error instanceof Error ? error.message : String(error));
-      
-      // Throw error so UI can catch it
-      throw new Error(
-        error instanceof Error 
-          ? `Design analysis failed: ${error.message}` 
-          : 'Design analysis service unavailable'
-      );
+      // Re-throw with user-friendly message instead of logging
+      if (error instanceof Error) {
+        throw new Error(`Design analysis failed: ${error.message}`);
+      }
+      throw new Error('Design analysis failed: Unable to analyze the design. Please try again.');
     }
   }
 }

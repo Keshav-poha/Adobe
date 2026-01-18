@@ -22,12 +22,12 @@ const Settings: React.FC = () => {
         const stored = await addOnUISdk.instance.clientStorage.getItem(STORAGE_KEY) as string | null;
         if (mounted) setApiKey(stored || '');
       } catch (err) {
-        console.error('Failed to read stored Groq key', err);
+        // Silently handle storage read errors during initialization
       } finally {
         if (mounted) setLoadingKey(false);
       }
     }).catch((e) => {
-      console.error('addOnUISdk not ready in Settings', e);
+      // Silently handle SDK initialization errors
       setLoadingKey(false);
     });
 
@@ -44,7 +44,7 @@ const Settings: React.FC = () => {
       setMessage('Saved');
       toast.showToast('success', 'Groq API key saved', 4000);
     } catch (err) {
-      console.error('Failed to save Groq API key', err);
+      // Error already handled by toast notification below
       setMessage('Failed to save');
       toast.showToast('error', 'Failed to save Groq API key', 6000);
     } finally {
@@ -63,7 +63,7 @@ const Settings: React.FC = () => {
       setMessage('API key valid');
       toast.showToast('success', 'Groq API key validated', 4000);
     } catch (err) {
-      console.error('Groq key test failed', err);
+      // Error already handled by toast notification below
       setMessage('Invalid or unreachable API key');
       toast.showToast('error', 'Groq API key test failed', 6000);
     } finally {
@@ -81,7 +81,7 @@ const Settings: React.FC = () => {
       setMessage('Cleared');
       toast.showToast('info', 'Groq API key cleared', 3500);
     } catch (err) {
-      console.error('Failed to clear Groq API key', err);
+      // Error already handled by toast notification below
       setMessage('Failed to clear');
       toast.showToast('error', 'Failed to clear Groq API key', 6000);
     } finally {
@@ -109,7 +109,7 @@ const Settings: React.FC = () => {
       }}>
         <label style={{
           display: 'block',
-          fontSize: 'var(--spectrum-body-s-text-size)',
+          fontSize: 'var(--spectrum-body-xs-text-size)',
           fontWeight: 600,
           color: 'var(--spectrum-body-color)',
           marginBottom: 'var(--spectrum-spacing-100)'
@@ -140,7 +140,7 @@ const Settings: React.FC = () => {
       }}>
         <label style={{
           display: 'block',
-          fontSize: 'var(--spectrum-body-s-text-size)',
+          fontSize: 'var(--spectrum-body-xs-text-size)',
           fontWeight: 600,
           color: 'var(--spectrum-body-color)',
           marginBottom: 'var(--spectrum-spacing-100)'
@@ -192,9 +192,6 @@ const Settings: React.FC = () => {
         {message && (
           <div style={{ marginTop: 'var(--spectrum-spacing-150)', color: '#00719f' }}>{message}</div>
         )}
-        <div style={{ marginTop: 'var(--spectrum-spacing-150)', fontSize: 'var(--spectrum-body-s-text-size)', color: 'var(--spectrum-text-secondary)' }}>
-          Need help creating a private add-on link? See the distribution docs: <a href="https://developer.adobe.com/express/add-ons/docs/guides/build/distribute/private-dist" target="_blank" rel="noopener noreferrer">Create a Private Distribution Link</a>
-        </div>
       </div>
     </div>
   );

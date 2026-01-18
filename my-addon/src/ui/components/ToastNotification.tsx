@@ -120,27 +120,24 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               fontSize: 'var(--spectrum-body-text-size)',
               color: 'var(--spectrum-body-color)',
               lineHeight: 1.5,
-              paddingTop: '2px'
+              paddingTop: '1px'
             }}>
               {toast.message}
             </div>
             <button
               onClick={() => removeToast(toast.id)}
+              className="toast-close-button"
               style={{
                 background: 'none',
                 border: 'none',
-                padding: 0,
+                color: '#6d6d6d',
                 cursor: 'pointer',
-                color: 'var(--spectrum-gray-600)',
+                padding: '3px',
+                borderRadius: '2px',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 flexShrink: 0
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--spectrum-gray-900)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--spectrum-gray-600)';
               }}
             >
               <X size={16} />

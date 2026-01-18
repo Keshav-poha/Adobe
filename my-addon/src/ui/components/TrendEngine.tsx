@@ -30,8 +30,7 @@ const TrendEngine: React.FC = () => {
       const aiTrends = await groqClient.getViralTrends(hasBrandData ? brandData : undefined, language);
       setTrends(aiTrends);
     } catch (error) {
-      console.error('Failed to fetch viral trends:', error);
-      // Inform user about potential configuration issues
+      // Error already handled by toast notification below
       toast.showToast('error', 'Failed to load AI trends. Set your Groq API key in Settings.', 7000);
     } finally {
       setLoadingTrends(false);
@@ -112,7 +111,7 @@ const TrendEngine: React.FC = () => {
           marginBottom: 'var(--spectrum-spacing-400)'
         }}>
           <h3 style={{ 
-            fontSize: 'var(--spectrum-heading-m-text-size)',
+            fontSize: 'var(--spectrum-heading-s-text-size)',
             fontWeight: 600,
             color: 'var(--spectrum-heading-color)',
             margin: '0 0 var(--spectrum-spacing-200) 0',
@@ -159,14 +158,14 @@ const TrendEngine: React.FC = () => {
               color: 'var(--spectrum-heading-color)',
             }}
           >
-            {t('viralTrending')} {hasBrandData && <span style={{ color: '#00719f', fontSize: 'var(--spectrum-body-s-text-size)', fontWeight: 400 }}>✓ {t('tailoredBrand')}</span>}
+            {t('viralTrending')} {hasBrandData && <span style={{ color: '#00719f', fontSize: 'var(--spectrum-body-xs-text-size)', fontWeight: 400 }}>✓ {t('tailoredBrand')}</span>}
           </label>
           <button
             onClick={fetchViralTrends}
             disabled={loadingTrends}
             style={{
               padding: 'var(--spectrum-spacing-100) var(--spectrum-spacing-200)',
-              fontSize: 'var(--spectrum-body-s-text-size)',
+              fontSize: 'var(--spectrum-body-xs-text-size)',
               fontFamily: 'adobe-clean, sans-serif',
               backgroundColor: 'transparent',
               color: '#4069FD',
@@ -203,7 +202,7 @@ const TrendEngine: React.FC = () => {
                 textAlign: 'center',
                 padding: 'var(--spectrum-spacing-400)',
                 color: 'var(--spectrum-gray-600)',
-                fontSize: 'var(--spectrum-body-s-text-size)',
+                fontSize: 'var(--spectrum-body-xs-text-size)',
               }}>
                 No trends loaded. Click refresh.
               </div>
@@ -256,7 +255,7 @@ const TrendEngine: React.FC = () => {
                       {trend.name}
                     </div>
                     <div style={{
-                      fontSize: 'var(--spectrum-body-s-text-size)',
+                      fontSize: 'var(--spectrum-body-xs-text-size)',
                       color: 'var(--spectrum-gray-700)',
                     }}>
                       {trend.desc}
@@ -271,7 +270,7 @@ const TrendEngine: React.FC = () => {
         {selectedTrends.length > 0 && (
           <div style={{
             marginTop: 'var(--spectrum-spacing-200)',
-            fontSize: 'var(--spectrum-body-s-text-size)',
+            fontSize: 'var(--spectrum-body-xs-text-size)',
             color: '#4069FD',
             fontWeight: 600,
           }}>
@@ -359,7 +358,7 @@ const TrendEngine: React.FC = () => {
             backgroundColor: 'rgba(64, 105, 253, 0.05)',
             border: '1px solid rgba(64, 105, 253, 0.2)',
             borderRadius: 'var(--spectrum-corner-radius-100)',
-            fontSize: 'var(--spectrum-body-s-text-size)',
+            fontSize: 'var(--spectrum-body-xs-text-size)',
             color: 'var(--spectrum-gray-700)',
           }}>
             <strong style={{ color: '#4069FD' }}>{t('selected')}:</strong> {contentTypes.find(t => t.id === selectedContentType)?.name}
@@ -448,7 +447,7 @@ const TrendEngine: React.FC = () => {
             borderRadius: 'var(--spectrum-corner-radius-100)',
             border: '1px solid var(--spectrum-border-color)',
             fontFamily: 'ui-monospace, monospace',
-            fontSize: 'var(--spectrum-body-s-text-size)',
+            fontSize: 'var(--spectrum-body-xs-text-size)',
             color: 'var(--spectrum-body-color)',
             lineHeight: 1.6,
             whiteSpace: 'pre-wrap',

@@ -1,10 +1,4 @@
-// Adobe Spectrum Express Theme - Light Mode
-import "@spectrum-web-components/theme/express/scale-medium.js";
-import "@spectrum-web-components/theme/express/theme-light.js";
-import "@spectrum-web-components/theme/sp-theme.js";
-import "@spectrum-web-components/styles/typography.css";
-
-import { Theme } from "@swc-react/theme";
+// Adobe Express Add-on - Custom Light Theme
 import React, { useState } from "react";
 import { DocumentSandboxApi } from "../../models/DocumentSandboxApi";
 import { BrandProvider } from "../../context/BrandContext";
@@ -28,7 +22,7 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
     const renderTabContent = () => {
         switch (activeTab) {
             case 'brand-brain':
-                return <BrandBrain />;
+                return <BrandBrain sandboxProxy={sandboxProxy} />;
             case 'trend-engine':
                 return <TrendEngine />;
             case 'design-auditor':
@@ -38,12 +32,12 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
             case 'about':
                 return <About />;
             default:
-                return <BrandBrain />;
+                return <BrandBrain sandboxProxy={sandboxProxy} />;
         }
     };
 
     return (
-        <Theme system="express" scale="medium" color="light">
+        <div className="app-theme">
             <LanguageProvider>
                 <ToastProvider>
                     <BrandProvider>
@@ -68,7 +62,7 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
                                     className="footer-icon-button"
                                     title="Settings"
                                     style={{
-                                        color: activeTab === 'settings' ? '#00719f' : 'var(--spectrum-gray-600)'
+                                        color: activeTab === 'settings' ? '#00719f' : '#6d6d6d'
                                     }}
                                 >
                                     <SettingsIcon size={16} />
@@ -78,7 +72,7 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
                                 className="footer-icon-button"
                                 title="About"
                                 style={{
-                                    color: activeTab === 'about' ? '#00719f' : 'var(--spectrum-gray-600)'
+                                    color: activeTab === 'about' ? '#00719f' : '#6d6d6d'
                                 }}
                             >
                                 <Info size={16} />
@@ -89,7 +83,7 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
                 </BrandProvider>
             </ToastProvider>
             </LanguageProvider>
-        </Theme>
+        </div>
     );
 };
 

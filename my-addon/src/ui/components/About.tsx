@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Brain, ExternalLink, Github, Mail, Search, TrendingUp } from 'lucide-react';
+import { Brain, ExternalLink, Github, Mail, Search, TrendingUp } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import logoLight from '../assets/light-full-removebg-preview.png';
 import addOnUISdk, { ButtonType, FieldType, Variant } from "https://express.adobe.com/static/add-on-sdk/sdk.js";
@@ -50,10 +50,9 @@ const About: React.FC = () => {
     cursor: 'pointer',
   };
 
-  const DOCS_URL =
-    'https://silky-saturday-54e.notion.site/2eabba81b034817a8256defeaa1bd200?v=2eabba81b03481be8693000cfb9f9262';
-  const GITHUB_URL = 'https://github.com/Keshav-poha/Adobe';
-  const SUPPORT_EMAIL = 'Keshav.poha@gmail.com';
+  const DOCS_URL = 'https://silky-saturday-54e.notion.site/2eabba81b034817a8256defeaa1bd200?v=2eabba81b03481be8693000cfb9f9262';
+  const GITHUB_URL = 'https://github.com/Keshav-poha/Adobe-express-addon';
+  const SUPPORT_EMAIL = 'aquawit22@gmail.com';
 
   const openResourcesPopup = async () => {
     try {
@@ -133,10 +132,10 @@ const About: React.FC = () => {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--spectrum-spacing-200)' }}>
         <div style={{ flexShrink: 0, color: PRIMARY, marginTop: 2 }}>{icon}</div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 'var(--spectrum-body-text-size)', fontWeight: 600, color: BODY, marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--spectrum-body-s-text-size)', fontWeight: 600, color: BODY, marginBottom: 8 }}>
             {title}
           </div>
-          <p style={{ margin: 0, fontSize: 'var(--spectrum-body-s-text-size)', color: MUTED, lineHeight: 1.5 }}>
+          <p style={{ margin: 0, fontSize: 'var(--spectrum-body-xs-text-size)', color: MUTED, lineHeight: 1.5 }}>
             {description}
           </p>
         </div>
@@ -192,7 +191,7 @@ const About: React.FC = () => {
             <h3 className="spectrum-heading-l" style={{ margin: '0 0 var(--spectrum-spacing-50) 0', color: PRIMARY }}>
               {t('pixelPluck')}
             </h3>
-            <div style={{ fontSize: 'var(--spectrum-body-s-text-size)', color: MUTED }}>
+            <div style={{ fontSize: 'var(--spectrum-body-xs-text-size)', color: MUTED }}>
               {t('version')}: 1.0.0
             </div>
           </div>
@@ -238,31 +237,6 @@ const About: React.FC = () => {
         </div>
       </div>
 
-      {/* Technology Stack */}
-      <div style={sectionStyle}>
-        <h3 className="spectrum-heading-l" style={sectionTitleRowStyle}>
-          <BookOpen size={20} color={PRIMARY} />
-          {t('techStack')}
-        </h3>
-
-        <div style={cardStyle}>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: 'var(--spectrum-spacing-400)',
-              fontSize: 'var(--spectrum-body-text-size)',
-              color: BODY,
-              lineHeight: 1.8,
-            }}
-          >
-            <li>Adobe Express Add-on SDK</li>
-            <li>Groq AI (Llama 3.3 70B)</li>
-            <li>Adobe Spectrum Design System</li>
-            <li>React &amp; TypeScript</li>
-          </ul>
-        </div>
-      </div>
-
       {/* Links Section */}
       <div style={{ marginBottom: 'var(--spectrum-spacing-300)' }}>
         <h3 className="spectrum-heading-l" style={sectionTitleRowStyle}>
@@ -273,7 +247,7 @@ const About: React.FC = () => {
             onClick={openResourcesPopup}
             style={{
               marginLeft: 'auto',
-              padding: '6px 10px',
+              padding: '4px 8px',
               fontSize: 'var(--spectrum-body-s-text-size)',
               fontFamily: 'adobe-clean, sans-serif',
               fontWeight: 600,

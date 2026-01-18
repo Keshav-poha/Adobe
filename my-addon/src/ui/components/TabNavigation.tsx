@@ -17,13 +17,7 @@ const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabChange })
   ];
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        backgroundColor: 'var(--spectrum-background-layer-1)',
-        borderBottom: '1px solid var(--spectrum-divider-color)',
-      }}
-    >
+    <div className="tab-navigation">
       {tabs.map((tab) => {
         const isActive = activeTab === tab.id;
         const IconComponent = tab.icon;
@@ -31,47 +25,11 @@ const TabNavigation: React.FC<TabNavigationProps> = ({ activeTab, onTabChange })
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
-            style={{
-              flex: 1,
-              padding: '12px var(--spectrum-spacing-300)',
-              fontSize: 'var(--spectrum-font-size-100)',
-              fontWeight: isActive ? 700 : 400,
-              fontFamily: 'adobe-clean, sans-serif',
-              backgroundColor: isActive ? 'var(--spectrum-background-layer-2)' : 'transparent',
-              color: isActive ? '#00719f' : 'var(--spectrum-text-secondary)',
-              border: 'none',
-              borderBottom: isActive 
-                ? '2px solid #00719f' 
-                : '2px solid transparent',
-              cursor: 'pointer',
-              transition: 'all 0.13s ease-out',
-              outline: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 'var(--spectrum-spacing-100)'
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.backgroundColor = 'var(--spectrum-background-layer-2)';
-                e.currentTarget.style.color = 'var(--spectrum-text-heading)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.backgroundColor = 'transparent';
-                e.currentTarget.style.color = 'var(--spectrum-text-secondary)';
-              }
-            }}
-            onFocus={(e) => {
-              e.currentTarget.style.boxShadow = 'inset 0 0 0 2px #00719f';
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.boxShadow = 'none';
-            }}
+            className={`tab-header ${isActive ? 'active' : ''}`}
           >
             <IconComponent size={16} />
-            {tab.label}
+            <span>{tab.label}</span>
+            {isActive && <div className="tab-underline"></div>}
           </button>
         );
       })}

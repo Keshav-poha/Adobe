@@ -47,4 +47,4 @@ We may update this policy occasionally. We will update the date at the top when 
 
 10. Contact
 
-For questions about this Privacy Policy or requests regarding your data, contact: support@yourdomain.example.com
+For questions about this Privacy Policy or requests regarding your data, contact: aquawit22@gmail.com

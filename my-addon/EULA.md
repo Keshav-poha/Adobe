@@ -36,10 +36,10 @@ This EULA is effective until terminated. Licensor may terminate this EULA if you
 
 8. Governing Law
 
-This EULA is governed by the laws of the jurisdiction where the Licensor is located. If you require a specific governing law clause, contact the Licensor at support@yourdomain.example.com.
+This EULA is governed by the laws of the jurisdiction where the Licensor is located. If you require a specific governing law clause, contact the Licensor at aquawit22@gmail.com.
 
 9. Contact
 
-For commercial licensing or other inquiries, contact: support@yourdomain.example.com
+For commercial licensing or other inquiries, contact: aquawit22@gmail.com
 
 By using the Software, you acknowledge that you have read and agree to this EULA.

@@ -25,8 +25,7 @@ const DesignAuditor: React.FC = () => {
         const premium = await addOnUISdk.app.currentUser.isPremiumUser();
         setIsPremiumUser(premium);
       } catch (error) {
-        console.error('Error checking premium status:', error);
-        // Default to non-premium if check fails
+        // Silently default to non-premium if premium check fails
         setIsPremiumUser(false);
       } finally {
         setCheckingPremium(false);
@@ -44,7 +43,7 @@ const DesignAuditor: React.FC = () => {
         setIsPremiumUser(true);
       }
     } catch (error) {
-      console.error('Error during upgrade flow:', error);
+      // Silently handle upgrade flow errors
     }
   };
 
@@ -122,24 +121,32 @@ const DesignAuditor: React.FC = () => {
     }
 
     setAuditing(true);
-    setAnalysis(null);
-    setError(null);
+    setAnalysis(null); // Clear previous analysis to ensure fresh audit
+    setError(null); // Clear any previous errors
 
     try {
-      // Create a fresh rendition of current page with multiple unique parameters to force regeneration
-      const timestamp = Date.now(); // Add timestamp for uniqueness
-      const uniqueId = timestamp % 100; // Unique identifier 0-99
+      // Create a completely fresh rendition with highly unique parameters to force regeneration
+      // This ensures a NEW audit is generated every time the button is pressed
+      const timestamp = Date.now();
+      const randomSeed = Math.random().toString(36).substring(2, 15);
+      const uniqueId = `${timestamp}_${randomSeed}_${Math.floor(Math.random() * 1000)}`;
 
       const renditions = await addOnUISdk.app.document.createRenditions(
         {
           range: addOnUISdk.constants.Range.currentPage,
           format: addOnUISdk.constants.RenditionFormat.png,
           requestedSize: {
-            width: 1024 + uniqueId,
-            height: 1024 + uniqueId
-          }, // Unique size variation
-          fileSizeLimit: 5000 + uniqueId, // Unique file size limit
+            width: 1024 + (timestamp % 100), // Vary width slightly
+            height: 1024 + (timestamp % 100), // Vary height slightly
+          },
+          fileSizeLimit: 5000 + (timestamp % 100), // Vary file size limit
           fileSizeLimitUnit: addOnUISdk.constants.FileSizeLimitUnit.KB,
+          // Add unique metadata to force fresh generation
+          metadata: {
+            auditId: uniqueId,
+            timestamp: timestamp,
+            randomSeed: randomSeed
+          }
         } as any // Cast to any to allow PNG-specific options
       );
 
@@ -169,7 +176,7 @@ const DesignAuditor: React.FC = () => {
       setAnalysis(visionAnalysis);
       toast.showToast('success', 'Design audit completed', 4000);
     } catch (error) {
-      console.error('Error running audit:', error);
+      // Error handling with toast notifications below
       
       // Provide specific error messages
       let errorMessage = 'Failed to run audit. Please try again.';
@@ -250,7 +257,7 @@ const DesignAuditor: React.FC = () => {
             onClick={handleUpgrade}
             style={{
               padding: 'var(--spectrum-spacing-200) var(--spectrum-spacing-400)',
-              fontSize: 'var(--spectrum-body-s-text-size)',
+              fontSize: 'var(--spectrum-body-xs-text-size)',
               fontWeight: 600,
               fontFamily: 'adobe-clean, sans-serif',
               backgroundColor: '#4069FD',
@@ -316,7 +323,7 @@ const DesignAuditor: React.FC = () => {
             flexWrap: 'wrap'
           }}>
             <span style={{ 
-              fontSize: 'var(--spectrum-body-s-text-size)',
+              fontSize: 'var(--spectrum-body-xs-text-size)',
               color: 'var(--spectrum-body-color)',
               fontWeight: 600
             }}>
@@ -427,7 +434,7 @@ const DesignAuditor: React.FC = () => {
               backgroundColor: getScoreColor(analysis.score),
               color: '#fff',
               borderRadius: 'var(--spectrum-corner-radius-100)',
-              fontSize: 'var(--spectrum-body-s-text-size)',
+              fontSize: 'var(--spectrum-body-xs-text-size)',
               fontWeight: 700,
             }}>
               {getScoreLabel(analysis.score)}
@@ -489,7 +496,7 @@ const DesignAuditor: React.FC = () => {
                   </div>
                 </div>
                 <span style={{ 
-                  fontSize: 'var(--spectrum-heading-m-text-size)', 
+                  fontSize: 'var(--spectrum-heading-s-text-size)', 
                   fontWeight: 700, 
                   color: getScoreColor(metric.score),
                   marginLeft: 'var(--spectrum-spacing-300)'
