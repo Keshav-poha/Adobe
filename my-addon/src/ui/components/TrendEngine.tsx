@@ -124,10 +124,41 @@ const TrendEngine: React.FC<{ sandboxProxy?: DocumentSandboxApi }> = ({ sandboxP
         toast.showToast('error', 'Canvas API not available.', 4000);
         return;
       }
-      // Insert the generated prompt text into the document
-      const promptText = `Prompt:\n${text}`;
-      sandboxProxy.createText(promptText);
-      toast.showToast('success', 'Prompt added to document.', 4000);
+
+      // Create a styled title
+      const titleText = `🎨 Firefly Prompt`;
+      sandboxProxy.createStyledText({
+        text: titleText,
+        fontSize: 22,
+        color: '#4069FD',
+        bold: true
+      });
+
+      // Create the prompt in a styled text box
+      const selectedType = contentTypes.find(t => t.id === selectedContentType);
+      const typeLabel = selectedType ? selectedType.name : 'Design';
+
+      sandboxProxy.createTextBox({
+        text: `Type: ${typeLabel}\n\n${text}`,
+        x: 50,
+        y: 80,
+        width: 400,
+        height: 200,
+        fontSize: 14,
+        color: '#333333',
+        backgroundColor: '#f8f9fa'
+      });
+
+      // Add usage hint
+      sandboxProxy.createStyledText({
+        text: '💡 Use this prompt in Adobe Firefly to generate your design',
+        fontSize: 12,
+        color: '#666666',
+        italic: true,
+        y: 300
+      });
+
+      toast.showToast('success', 'Prompt added to document with enhanced styling!', 4000);
     } catch (err) {
       toast.showToast('error', 'Failed to add prompt to document.', 5000);
     }

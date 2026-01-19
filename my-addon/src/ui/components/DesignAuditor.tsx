@@ -221,25 +221,91 @@ const DesignAuditor: React.FC<{ sandboxProxy?: DocumentSandboxApi }> = ({ sandbo
         toast.showToast('error', 'Canvas API not available.', 4000);
         return;
       }
-      // Build a concise textual summary and add it to the document
-      const lines: string[] = [];
-      lines.push(`Audit Score: ${analysis.score} (${getScoreLabel(analysis.score)})`);
-      if (analysis.feedback && analysis.feedback.length) {
-        lines.push('\nFeedback:');
-        lines.push(...analysis.feedback.slice(0, 5).map((f) => `- ${f}`));
-      }
-      if (analysis.recommendations && analysis.recommendations.length) {
-        lines.push('\nRecommendations:');
-        lines.push(...analysis.recommendations.slice(0, 5).map((r) => `- ${r}`));
-      }
-      const primaryColors = (analysis as any).primaryColors || (brandData ? brandData.primaryColors : []);
-      if (primaryColors && primaryColors.length) {
-        lines.push('\nPrimary Colors: ' + primaryColors.slice(0, 5).join(', '));
+
+      // Create a styled title
+      const titleText = `🎨 Design Audit Results`;
+      sandboxProxy.createStyledText({
+        text: titleText,
+        fontSize: 24,
+        color: '#4069FD',
+        bold: true
+      });
+
+      // Create score display with background box
+      const scoreLabel = getScoreLabel(analysis.score);
+      const scoreText = `Score: ${analysis.score}/100 (${scoreLabel})`;
+
+      sandboxProxy.createTextBox({
+        text: scoreText,
+        x: 50,
+        y: 100,
+        width: 300,
+        height: 60,
+        fontSize: 18,
+        color: '#ffffff',
+        backgroundColor: getScoreColor(analysis.score)
+      });
+
+      // Add feedback section
+      if (analysis.feedback && analysis.feedback.length > 0) {
+        sandboxProxy.createStyledText({
+          text: '\n💡 Feedback:',
+          fontSize: 18,
+          color: '#00719f',
+          bold: true,
+          y: 180
+        });
+
+        const feedbackText = analysis.feedback.slice(0, 5).map(f => `• ${f}`).join('\n');
+        sandboxProxy.createStyledText({
+          text: feedbackText,
+          fontSize: 14,
+          color: '#333333',
+          y: 210
+        });
       }
 
-      const summaryText = lines.join('\n');
-      sandboxProxy.createText(summaryText);
-      toast.showToast('success', 'Analysis added to document.', 4000);
+      // Add recommendations section
+      if (analysis.recommendations && analysis.recommendations.length > 0) {
+        const recY = analysis.feedback ? 280 : 180;
+        sandboxProxy.createStyledText({
+          text: '\n🚀 Recommendations:',
+          fontSize: 18,
+          color: '#00719f',
+          bold: true,
+          y: recY
+        });
+
+        const recText = analysis.recommendations.slice(0, 5).map(r => `• ${r}`).join('\n');
+        sandboxProxy.createStyledText({
+          text: recText,
+          fontSize: 14,
+          color: '#333333',
+          y: recY + 30
+        });
+      }
+
+      // Add brand colors section
+      const primaryColors = (analysis as any).primaryColors || (brandData ? brandData.primaryColors : []);
+      if (primaryColors && primaryColors.length > 0) {
+        const colorsY = (analysis.feedback ? 280 : 180) + (analysis.recommendations ? 100 : 0) + 50;
+        sandboxProxy.createStyledText({
+          text: '\n🎨 Primary Colors:',
+          fontSize: 16,
+          color: '#00719f',
+          bold: true,
+          y: colorsY
+        });
+
+        sandboxProxy.createStyledText({
+          text: primaryColors.slice(0, 5).join(', '),
+          fontSize: 14,
+          color: '#333333',
+          y: colorsY + 25
+        });
+      }
+
+      toast.showToast('success', 'Analysis added to document with enhanced styling!', 4000);
     } catch (err) {
       toast.showToast('error', 'Failed to add to document.', 5000);
     }

@@ -24,9 +24,9 @@ const App = ({ addOnUISdk, sandboxProxy }: { addOnUISdk: AddOnSDKAPI; sandboxPro
             case 'brand-brain':
                 return <BrandBrain sandboxProxy={sandboxProxy} />;
             case 'trend-engine':
-                return <TrendEngine />;
+                return <TrendEngine sandboxProxy={sandboxProxy} />;
             case 'design-auditor':
-                return <DesignAuditor />;
+                return <DesignAuditor sandboxProxy={sandboxProxy} />;
             case 'settings':
                 return <Settings />;
             case 'about':
