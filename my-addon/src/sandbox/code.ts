@@ -37,6 +37,24 @@ function start(): void {
                 // Image insertion failed
             }
         },
+        createText: (text: string) => {
+            try {
+                const insertionParent = editor.context.insertionParent;
+                const textNode = editor.createText(text);
+
+                // Position the text at a random-ish location so multiple inserts don't overlap exactly
+                const baseX = Math.floor(Math.random() * 300) + 40;
+                const baseY = Math.floor(Math.random() * 300) + 40;
+                textNode.setPositionInParent({ x: baseX, y: baseY }, { x: 0, y: 0 });
+
+                // Apply a reasonable default style
+                textNode.fullContent.applyCharacterStyles({ fontSize: 20, color: { red: 0, green: 0, blue: 0, alpha: 1 } });
+
+                insertionParent.children.append(textNode);
+            } catch (e) {
+                // ignore insertion errors
+            }
+        },
     };
 
     runtime.exposeApi(sandboxApi);

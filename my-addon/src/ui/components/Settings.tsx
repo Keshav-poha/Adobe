@@ -42,7 +42,7 @@ const Settings: React.FC = () => {
       // Initialize Groq client at runtime
       groqClient.setApiKey(apiKey || '');
       setMessage('Saved');
-      toast.showToast('success', 'Groq API key saved', 4000);
+      // Groq API key saved - suppressed success toast
     } catch (err) {
       // Error already handled by toast notification below
       setMessage('Failed to save');
@@ -61,7 +61,7 @@ const Settings: React.FC = () => {
       // Perform a lightweight check
       await groqClient.getViralTrends(undefined, 'en');
       setMessage('API key valid');
-      toast.showToast('success', 'Groq API key validated', 4000);
+      // Groq API key validated - suppressed success toast
     } catch (err) {
       // Error already handled by toast notification below
       setMessage('Invalid or unreachable API key');
@@ -79,7 +79,7 @@ const Settings: React.FC = () => {
       groqClient.setApiKey('');
       setApiKey('');
       setMessage('Cleared');
-      toast.showToast('info', 'Groq API key cleared', 3500);
+      // Groq API key cleared - suppressed info toast
     } catch (err) {
       // Error already handled by toast notification below
       setMessage('Failed to clear');

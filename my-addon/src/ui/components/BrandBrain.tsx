@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
-import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler, Upload, AlertTriangle, Plus } from 'lucide-react';
+import { Brain, Link, FileText, Sparkles, Palette, MessageSquare, CheckSquare, Ruler, Upload, AlertTriangle, Plus, X } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
 import { useToast } from './ToastNotification';
 import { useLanguage } from '../../context/LanguageContext';
@@ -24,8 +24,18 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
   const [progress, setProgress] = useState<string>('');
   const { brandData, setBrandData } = useBrand();
   const toast = useToast();
+  const [isCancelled, setIsCancelled] = useState(false);
   const [isPremiumUser, setIsPremiumUser] = useState<boolean | null>(null);
   const [checkingPremium, setCheckingPremium] = useState(true);
+  const cancelText = (t('cancel') || 'Cancel').trim();
+
+  useEffect(() => {
+    try {
+      console.debug('[BrandBrain] language:', language, 'cancelText:', JSON.stringify(cancelText));
+    } catch (e) {
+      // ignore
+    }
+  }, [language, cancelText]);
 
   // Check premium status on component mount
   useEffect(() => {
@@ -48,11 +58,23 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
   const cancelExtraction = () => {
     if (abortController) {
       abortController.abort();
+      setIsCancelled(true);
       setAbortController(null);
       setLoading(false);
       setProgress('');
-      toast.showToast('info', t('extractionCancelled'), 3000);
     }
+  };
+
+  // Clear extracted brand data
+  const clearBrandData = () => {
+    setBrandData({
+      primaryColors: [],
+      brandVoice: '',
+      designGuidelines: [],
+      typography: undefined,
+      spacing: undefined,
+      layoutPatterns: []
+    });
   };
 
   // Validate URL format
@@ -95,6 +117,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
 
     const controller = new AbortController();
     setAbortController(controller);
+    setIsCancelled(false);
     setLoading(true);
     setError(null);
     setProgress(t('analyzingWebsite'));
@@ -104,13 +127,12 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
       const websiteContent = `Website URL: ${url}\n\nPlease analyze this website for brand identity. Extract colors, typography, messaging, and design patterns.`;
 
       setProgress(t('extractingBrandData'));
-      const extractedBrandData = await groqClient.extractBrandIdentity(websiteContent, language, undefined, controller.signal);
+      const extractedBrandData = await groqClient.extractBrandIdentity(websiteContent, language, undefined, controller.signal, () => isCancelled);
 
       setBrandData(extractedBrandData);
       setProgress('');
-      toast.showToast('success', t('brandExtracted'), 4000);
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && (err.name === 'AbortError' || isCancelled)) {
         // Request was cancelled
         return;
       }
@@ -140,19 +162,20 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
 
     const controller = new AbortController();
     setAbortController(controller);
+    setIsCancelled(false);
     setLoading(true);
     setError(null);
     setProgress(t('analyzingText'));
 
     try {
       setProgress(t('extractingBrandData'));
-      const extractedBrandData = await groqClient.extractBrandIdentity(manualText, language, undefined, controller.signal);
+      const extractedBrandData = await groqClient.extractBrandIdentity(manualText, language, undefined, controller.signal, () => isCancelled);
 
       setBrandData(extractedBrandData);
       setProgress('');
-      toast.showToast('success', t('brandExtracted'), 4000);
+      // success toast suppressed to reduce notifications
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && (err.name === 'AbortError' || isCancelled)) {
         return;
       }
       const message = err instanceof Error ? err.message : t('extractionFailed');
@@ -181,6 +204,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
 
     const controller = new AbortController();
     setAbortController(controller);
+    setIsCancelled(false);
     setLoading(true);
     setError(null);
     setProgress(t('processingImage'));
@@ -199,12 +223,12 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
       });
 
       setProgress(t('analyzingImage'));
-      const extractedBrandData = await groqClient.extractBrandIdentity('', language, base64, controller.signal);
+      const extractedBrandData = await groqClient.extractBrandIdentity('', language, base64, controller.signal, () => isCancelled);
       setBrandData(extractedBrandData);
       setProgress('');
-      toast.showToast('success', t('brandExtracted'), 4000);
+      // success toast suppressed to reduce notifications
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (err instanceof Error && (err.name === 'AbortError' || isCancelled)) {
         return;
       }
       const message = err instanceof Error ? err.message : t('extractionFailed');
@@ -231,13 +255,13 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
 
     setUploadedImage(file);
     setError(null);
-    toast.showToast('success', t('imageUploaded'), 3000);
+    // image uploaded - no toast to reduce noise
   };
 
   const applyBrandColorsToDocument = async () => {
     // Check premium status before applying colors
     if (!isPremiumUser) {
-      toast.showToast('error', 'Adding colors to document is a premium feature. Please upgrade to Adobe Express Premium to use this feature.', 7000);
+      toast.showToast('error', 'Adding colors to document requires an upgrade. Please upgrade to use this feature.', 7000);
       return;
     }
 
@@ -267,7 +291,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
         xOffset += rectWidth + spacing;
       }
 
-      toast.showToast('success', t('colorsAppliedToDocument'), 4000);
+      // Colors applied to document - no toast to reduce noise
     } catch (err) {
       const message = err instanceof Error ? err.message : t('documentUpdateFailed');
       toast.showToast('error', message, 7000);
@@ -330,7 +354,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
           }}
         >
           <Upload size={14} style={{ marginRight: '4px' }} />
-          Upload Screenshot
+          {t('uploadScreenshot')}
         </button>
       </div>
 
@@ -382,7 +406,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
           }}
         />
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--spectrum-spacing-300)' }}>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spectrum-spacing-300)', marginTop: 'var(--spectrum-spacing-300)' }}>
           <button
             onClick={handleExtract}
             disabled={!url.trim() || loading}
@@ -416,24 +440,6 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
               <div style={{ fontSize: 'var(--spectrum-body-xs-text-size)', color: 'var(--spectrum-text-secondary)' }}>
                 {progress || t('extracting')}
               </div>
-              {abortController && (
-                <button
-                  onClick={cancelExtraction}
-                  style={{
-                    padding: '3px 9px',
-                    fontSize: 'var(--spectrum-body-xs-text-size)',
-                    fontWeight: 500,
-                    backgroundColor: 'var(--spectrum-red-600)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: 'var(--spectrum-corner-radius-100)',
-                    cursor: 'pointer',
-                    marginTop: '4px'
-                  }}
-                >
-                  {t('cancel')}
-                </button>
-              )}
             </div>
           ) : (
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
@@ -442,6 +448,31 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
             </span>
           )}
           </button>
+
+          {loading && abortController && (
+            <button
+              onClick={cancelExtraction}
+              title={t('cancel') || 'Cancel'}
+              aria-label={t('cancel') || 'Cancel'}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.45)',
+                border: 'none',
+                padding: '6px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 9999,
+              }}
+            >
+              <X size={14} color="#fff" />
+            </button>
+          )}
         </div>
       </div>
       )}
@@ -495,7 +526,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
           }}
         />
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--spectrum-spacing-300)' }}>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spectrum-spacing-300)', marginTop: 'var(--spectrum-spacing-300)' }}>
           <button
             onClick={handleManualExtract}
             disabled={!manualText.trim() || loading}
@@ -524,7 +555,12 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
           }}
         >
           {loading ? (
-            <>{t('extracting')}</>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <ProgressCircle size="small" />
+              <div style={{ fontSize: 'var(--spectrum-body-xs-text-size)', color: 'var(--spectrum-text-secondary)' }}>
+                {progress || t('extracting')}
+              </div>
+            </div>
           ) : (
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
               <Sparkles size={16} />
@@ -532,6 +568,31 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
             </span>
           )}
           </button>
+
+          {loading && abortController && (
+            <button
+              onClick={cancelExtraction}
+              title={t('cancel') || 'Cancel'}
+              aria-label={t('cancel') || 'Cancel'}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.45)',
+                border: 'none',
+                padding: '6px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 9999,
+              }}
+            >
+              <X size={14} color="#fff" />
+            </button>
+          )}
         </div>
       </div>
       )}
@@ -592,7 +653,7 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
           </label>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 'var(--spectrum-spacing-300)' }}>
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spectrum-spacing-300)', marginTop: 'var(--spectrum-spacing-300)' }}>
           <button
             onClick={handleImageExtract}
             disabled={!uploadedImage || loading}
@@ -621,7 +682,12 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
           }}
         >
           {loading ? (
-            <>{t('extracting')}</>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <ProgressCircle size="small" />
+              <div style={{ fontSize: 'var(--spectrum-body-xs-text-size)', color: 'var(--spectrum-text-secondary)' }}>
+                {progress || t('extracting')}
+              </div>
+            </div>
           ) : (
             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
               <Sparkles size={16} />
@@ -629,6 +695,31 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
             </span>
           )}
           </button>
+
+          {loading && abortController && (
+            <button
+              onClick={cancelExtraction}
+              title={t('cancel') || 'Cancel'}
+              aria-label={t('cancel') || 'Cancel'}
+              style={{
+                position: 'absolute',
+                right: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'rgba(0,0,0,0.45)',
+                border: 'none',
+                padding: '6px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 9999,
+              }}
+            >
+              <X size={14} color="#fff" />
+            </button>
+          )}
         </div>
       </div>
       )}
@@ -665,19 +756,48 @@ const BrandBrain: React.FC<BrandBrainProps> = ({ sandboxProxy }) => {
             margin: '0 0 var(--spectrum-spacing-300) 0',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             gap: 'var(--spectrum-spacing-200)'
           }}>
-            <CheckSquare size={20} color="#00719f" />
-            Brand Identity Extracted
+            <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--spectrum-spacing-200)' }}>
+              <CheckSquare size={20} color="#00719f" />
+              Brand Identity Extracted
+            </span>
+            <button
+              onClick={clearBrandData}
+              style={{
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: 'var(--spectrum-corner-radius-100)',
+                color: 'var(--spectrum-gray-600)',
+                transition: 'all 0.13s ease-out',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--spectrum-red-100)';
+                e.currentTarget.style.color = 'var(--spectrum-red-700)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--spectrum-gray-600)';
+              }}
+              title="Clear brand data"
+            >
+              <X size={16} />
+            </button>
           </h3>
           
           <p style={{
             fontSize: 'var(--spectrum-body-xs-text-size)',
             color: 'var(--spectrum-gray-600)',
             margin: '0 0 var(--spectrum-spacing-300) 0',
-            fontStyle: 'italic'
+          fontStyle: 'italic'
           }}>
-            Not accurate? Try other input methods above
+            {t('notAccurateNote')}
           </p>
           
           {/* Primary Colors */}

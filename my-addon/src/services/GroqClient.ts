@@ -107,15 +107,27 @@ class GroqClient {
   private async retryWithBackoff<T>(
     operation: () => Promise<T>,
     maxRetries: number = 3,
-    baseDelay: number = 1000
+    baseDelay: number = 1000,
+    signal?: AbortSignal,
+    onCancelCheck?: () => boolean
   ): Promise<T> {
     let lastError: Error;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      // Check if operation was aborted or cancelled
+      if (signal?.aborted || onCancelCheck?.()) {
+        throw new Error('Operation was cancelled');
+      }
+
       try {
         return await operation();
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Check if this is an abort error or cancelled
+        if (lastError.name === 'AbortError' || signal?.aborted || onCancelCheck?.()) {
+          throw new Error('Operation was cancelled');
+        }
 
         // Use error categorization to determine if we should retry
         const { message, isRetryable } = this.categorizeError(error);
@@ -135,9 +147,20 @@ class GroqClient {
           throw categorizedError;
         }
 
+        // Check for abort before waiting
+        if (signal?.aborted) {
+          throw new Error('Operation was cancelled');
+        }
+
         // Wait before retrying with exponential backoff
         const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(resolve, delay);
+          signal?.addEventListener('abort', () => {
+            clearTimeout(timeout);
+            reject(new Error('Operation was cancelled'));
+          });
+        });
       }
     }
 
@@ -275,22 +298,68 @@ If the content is inappropriate, respond with only "REJECT". If it's safe, respo
     websiteContent: string, 
     language: string = 'en',
     screenshot?: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onCancelCheck?: () => boolean
   ): Promise<BrandData> {
-    // Create cache key based on input parameters
-    const cacheKey = `brand_${language}_${screenshot ? 'with_image' : 'text_only'}_${btoa(websiteContent).slice(0, 50)}`;
+    // Create cache key based on input parameters - add timestamp to ensure fresh results
+    const timestamp = Date.now();
+    const cacheKey = `brand_${language}_${screenshot ? 'with_image' : 'text_only'}_${btoa(websiteContent).slice(0, 50)}_${timestamp}`;
     
-    // Check cache first
-    const cachedResult = this.getCachedData(cacheKey);
-    if (cachedResult) {
-      return cachedResult;
-    }
+    // Skip cache check for fresh extractions
+    // const cachedResult = this.getCachedData(cacheKey);
+    // if (cachedResult) {
+    //   return cachedResult;
+    // }
 
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
     
     // Check user input with AI
     await this.checkUserInput(websiteContent);
+
+    // Pre-check: confirm the input actually describes a brand
+    try {
+      const preCheckPrompt = `Determine whether the following input describes a BRAND (a company, product, service, or organization identity). Return ONLY valid JSON with two keys: {"isBrand": true|false, "reason": "short explanation (1 sentence)"}.
+
+INPUT:
+${websiteContent}`;
+
+      const preCheck = await this.retryWithBackoff(async () => {
+        if (signal?.aborted || onCancelCheck?.()) {
+          throw new Error('Operation was cancelled');
+        }
+        return this.ensureClient().chat.completions.create({
+          messages: [
+            { role: 'system', content: 'You are a concise classifier that responds with strict JSON.' },
+            { role: 'user', content: preCheckPrompt },
+          ],
+          model: this.TEXT_MODEL,
+          temperature: 0,
+          max_tokens: 60,
+        }, { signal });
+      }, 2, 500, signal, onCancelCheck);
+
+      const preText = preCheck.choices?.[0]?.message?.content || '{}';
+      const cleanedPre = preText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      let preJson: any = {};
+      try {
+        preJson = JSON.parse(cleanedPre);
+      } catch (e) {
+        // If parsing fails, conservatively continue to full analysis (fail-open)
+        preJson = { isBrand: true, reason: 'unable to parse pre-check; proceeding with analysis' };
+      }
+
+      if (preJson && preJson.isBrand === false) {
+        throw new Error(`Input does not appear to describe a brand: ${String(preJson.reason || '')}`);
+      }
+    } catch (err) {
+      // If the pre-check fails with a cancellation, rethrow; if it fails for other reasons, allow main flow
+      if (err instanceof Error && (err.message === 'Operation was cancelled' || err.message.includes('cancelled'))) {
+        throw err;
+      }
+      // Log and continue - pre-check is best-effort
+      console.warn('Pre-check for brand classification failed or was inconclusive:', err);
+    }
     
     try {
       // Determine which model to use based on input type
@@ -384,14 +453,21 @@ REQUIRED FORMAT:
       const client = this.ensureClient();
 
       const completion = await this.retryWithBackoff(async () => {
+        // Check if operation was cancelled before making API call
+        if (signal?.aborted || onCancelCheck?.()) {
+          throw new Error('Operation was cancelled');
+        }
+        
         return client.chat.completions.create({
           messages,
           model: modelToUse,
           temperature: 0.1,
           max_tokens: 1024,
           response_format: ({ type: 'json_object' } as any),
+        }, {
+          signal, // Pass signal in options
         });
-      });
+      }, 3, 1000, signal, onCancelCheck);
 
       const responseText = completion.choices[0]?.message?.content || '{}';
       
@@ -438,8 +514,8 @@ REQUIRED FORMAT:
         brandData.websiteScreenshot = screenshot;
       }
 
-      // Cache the result for future use
-      this.setCachedData(cacheKey, brandData);
+      // Cache the result for future use (disabled for fresh extractions)
+      // this.setCachedData(cacheKey, brandData);
 
       return brandData;
     } catch (error) {
@@ -459,7 +535,9 @@ REQUIRED FORMAT:
     brandContext: BrandData,
     includeTrendySuggestions: boolean = false,
     selectedEvents: string[] = [],
-    language: string = 'en'
+    language: string = 'en',
+    signal?: AbortSignal,
+    onCancelCheck?: () => boolean
   ): Promise<string> {
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
@@ -478,6 +556,9 @@ Include: style, composition, lighting, mood, brand colors. Be specific and direc
       const client = this.ensureClient();
 
       const completion = await this.retryWithBackoff(async () => {
+        if (signal?.aborted || onCancelCheck?.()) {
+          throw new Error('Operation was cancelled');
+        }
         return client.chat.completions.create({
           messages: [
             {
@@ -488,8 +569,8 @@ Include: style, composition, lighting, mood, brand colors. Be specific and direc
           model: this.TEXT_MODEL,
           temperature: 0.2,
           max_tokens: 200,
-        });
-      });
+        }, { signal });
+      }, 3, 500, signal, onCancelCheck);
 
       const result = completion.choices[0]?.message?.content;
       if (!result || typeof result !== 'string' || result.trim().length < 10) {
@@ -617,18 +698,21 @@ Return ONLY the JSON array, no markdown formatting or additional text.`;
   async analyzeDesign(
     imageBase64: string,
     brandGuidelines: BrandData,
-    language: string = 'en'
+    language: string = 'en',
+    signal?: AbortSignal,
+    onCancelCheck?: () => boolean
   ): Promise<VisionAnalysis> {
     // Create cache key based on image hash and brand colors (as a proxy for brand identity)
     const imageHash = btoa(imageBase64).slice(0, 20);
     const brandHash = brandGuidelines.primaryColors.join('_');
-    const cacheKey = `design_${language}_${imageHash}_${brandHash}`;
+    const timestamp = Date.now();
+    const cacheKey = `design_${language}_${imageHash}_${brandHash}_${timestamp}`;
     
-    // Check cache first
-    const cachedResult = this.getCachedData(cacheKey);
-    if (cachedResult) {
-      return cachedResult;
-    }
+    // Skip cache read to ensure fresh results for every audit
+    // const cachedResult = this.getCachedData(cacheKey);
+    // if (cachedResult) {
+    //   return cachedResult;
+    // }
 
     const languageNames: Record<string, string> = { en: 'English', es: 'Spanish', fr: 'French' };
     const responseLang = languageNames[language] || 'English';
@@ -705,6 +789,9 @@ Return ONLY valid JSON:
       const client = this.ensureClient();
 
       const completion = await this.retryWithBackoff(async () => {
+        if (signal?.aborted || onCancelCheck?.()) {
+          throw new Error('Operation was cancelled');
+        }
         return client.chat.completions.create({
           messages: [
             {
@@ -719,8 +806,8 @@ Return ONLY valid JSON:
           model: this.VISION_MODEL,
           temperature: 0.2,
           max_tokens: 1500,
-        });
-      });
+        }, { signal });
+      }, 3, 1000, signal, onCancelCheck);
 
       const responseText = completion.choices[0]?.message?.content || '{}';
       
@@ -757,8 +844,8 @@ Return ONLY valid JSON:
       await this.checkAIOutput(result.feedback.join(' '));
       await this.checkAIOutput(result.recommendations.join(' '));
 
-      // Cache the result for future use
-      this.setCachedData(cacheKey, result);
+      // Disabled caching to force fresh analysis on each run during development
+      // this.setCachedData(cacheKey, result);
 
       return result;
     } catch (error) {

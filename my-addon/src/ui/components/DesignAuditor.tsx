@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useBrand } from '../../context/BrandContext';
 import { groqClient, VisionAnalysis } from '../../services/GroqClient';
-import { Search, BarChart3, Lightbulb, Sparkles, Upload, Lock, Crown } from 'lucide-react';
+import { Search, BarChart3, Lightbulb, Sparkles, Upload, Lock, Crown, X } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
 import addOnUISdk from "https://express.adobe.com/static/add-on-sdk/sdk.js";
 import { useLanguage } from '../../context/LanguageContext';
 import { useToast } from './ToastNotification';
+import { DocumentSandboxApi } from '../../models/DocumentSandboxApi';
 
-const DesignAuditor: React.FC = () => {
+const DesignAuditor: React.FC<{ sandboxProxy?: DocumentSandboxApi }> = ({ sandboxProxy }) => {
   const { t, language } = useLanguage();
   const { brandData, hasBrandData } = useBrand();
   const [auditing, setAuditing] = useState(false);
   const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [isPremiumUser, setIsPremiumUser] = useState<boolean | null>(null);
   const [checkingPremium, setCheckingPremium] = useState(true);
 
@@ -111,7 +113,7 @@ const DesignAuditor: React.FC = () => {
   const runAudit = async () => {
     // Check premium status before running audit
     if (!isPremiumUser) {
-      setError('Design Audit is a premium feature. Please upgrade to Adobe Express Premium to use this feature.');
+      setError('Design Audit requires an upgrade. Please upgrade to use this feature.');
       return;
     }
     
@@ -120,6 +122,8 @@ const DesignAuditor: React.FC = () => {
       return;
     }
 
+    const controller = new AbortController();
+    setAbortController(controller);
     setAuditing(true);
     setAnalysis(null); // Clear previous analysis to ensure fresh audit
     setError(null); // Clear any previous errors
@@ -165,8 +169,8 @@ const DesignAuditor: React.FC = () => {
         throw new Error('Page appears empty. Add some content before running design audit.');
       }
 
-      // Analyze with Groq Vision
-      const visionAnalysis = await groqClient.analyzeDesign(base64, brandData, language);
+      // Analyze with Groq Vision (pass signal for cancellation, force fresh results)
+      const visionAnalysis = await groqClient.analyzeDesign(base64, brandData, language, controller.signal, () => !!controller.signal.aborted);
       
       // Validate analysis returned
       if (!visionAnalysis) {
@@ -174,7 +178,7 @@ const DesignAuditor: React.FC = () => {
       }
       
       setAnalysis(visionAnalysis);
-      toast.showToast('success', 'Design audit completed', 4000);
+      // suppressed success toast to reduce notification noise
     } catch (error) {
       // Error handling with toast notifications below
       
@@ -199,6 +203,45 @@ const DesignAuditor: React.FC = () => {
       toast.showToast('error', errorMessage, 7000);
     } finally {
       setAuditing(false);
+      setAbortController(null);
+    }
+  };
+
+  const cancelAudit = () => {
+    if (abortController) {
+      abortController.abort();
+      setAuditing(false);
+      setAbortController(null);
+    }
+  };
+
+  const addAnalysisToCanvas = async (analysis: VisionAnalysis) => {
+    try {
+      if (!sandboxProxy) {
+        toast.showToast('error', 'Canvas API not available.', 4000);
+        return;
+      }
+      // Build a concise textual summary and add it to the document
+      const lines: string[] = [];
+      lines.push(`Audit Score: ${analysis.score} (${getScoreLabel(analysis.score)})`);
+      if (analysis.feedback && analysis.feedback.length) {
+        lines.push('\nFeedback:');
+        lines.push(...analysis.feedback.slice(0, 5).map((f) => `- ${f}`));
+      }
+      if (analysis.recommendations && analysis.recommendations.length) {
+        lines.push('\nRecommendations:');
+        lines.push(...analysis.recommendations.slice(0, 5).map((r) => `- ${r}`));
+      }
+      const primaryColors = (analysis as any).primaryColors || (brandData ? brandData.primaryColors : []);
+      if (primaryColors && primaryColors.length) {
+        lines.push('\nPrimary Colors: ' + primaryColors.slice(0, 5).join(', '));
+      }
+
+      const summaryText = lines.join('\n');
+      sandboxProxy.createText(summaryText);
+      toast.showToast('success', 'Analysis added to document.', 4000);
+    } catch (err) {
+      toast.showToast('error', 'Failed to add to document.', 5000);
     }
   };
 
@@ -250,7 +293,7 @@ const DesignAuditor: React.FC = () => {
             color: 'var(--spectrum-body-color)',
             margin: '0 0 var(--spectrum-spacing-300) 0',
           }}>
-            Feature available to Express Pro users only
+            Feature available to users on the Upgrade plan only
           </p>
 
           <button
@@ -349,44 +392,73 @@ const DesignAuditor: React.FC = () => {
       )}
 
       {/* Run Audit Button */}
-      <button
-        onClick={runAudit}
-        disabled={!hasBrandData || auditing}
-        style={{
-          width: '100%',
-          padding: 'var(--spectrum-spacing-300) var(--spectrum-spacing-400)',
-          fontSize: 'var(--spectrum-font-size-200)',
-          fontWeight: 700,
-          fontFamily: 'adobe-clean, sans-serif',
-          backgroundColor: auditing ? 'var(--spectrum-gray-400)' : '#4069FD',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 'var(--spectrum-corner-radius-100)',
-          cursor: !hasBrandData || auditing ? 'not-allowed' : 'pointer',
-          transition: 'all 0.13s ease-out',
-          opacity: !hasBrandData || auditing ? 0.5 : 1,
-          marginBottom: 'var(--spectrum-spacing-400)',
-        }}
-        onMouseEnter={(e) => {
-          if (hasBrandData && !auditing) {
-            e.currentTarget.style.backgroundColor = '#5078FE';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (hasBrandData && !auditing) {
-            e.currentTarget.style.backgroundColor = '#4069FD';
-          }
-        }}
-      >
-        {auditing ? (
-          <>{t('analyzing')}</>
-        ) : (
-          <>
-            <Search size={18} />
-            {t('runAudit')}
-          </>
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={runAudit}
+          disabled={!hasBrandData || auditing}
+          style={{
+            width: '100%',
+            padding: 'var(--spectrum-spacing-300) var(--spectrum-spacing-400)',
+            fontSize: 'var(--spectrum-font-size-200)',
+            fontWeight: 700,
+            fontFamily: 'adobe-clean, sans-serif',
+            backgroundColor: auditing ? 'var(--spectrum-gray-400)' : '#4069FD',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 'var(--spectrum-corner-radius-100)',
+            cursor: !hasBrandData || auditing ? 'not-allowed' : 'pointer',
+            transition: 'all 0.13s ease-out',
+            opacity: !hasBrandData || auditing ? 0.5 : 1,
+            marginBottom: 'var(--spectrum-spacing-400)'
+          }}
+          onMouseEnter={(e) => {
+            if (hasBrandData && !auditing) {
+              e.currentTarget.style.backgroundColor = '#5078FE';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (hasBrandData && !auditing) {
+              e.currentTarget.style.backgroundColor = '#4069FD';
+            }
+          }}
+        >
+          {auditing ? (
+            <>{t('analyzing')}</>
+          ) : (
+            <>
+              <Search size={18} />
+              {t('runAudit')}
+            </>
+          )}
+        </button>
+
+        {auditing && (
+          <button
+            onClick={cancelAudit}
+            title={t('cancel') || 'Cancel'}
+            aria-label={t('cancel') || 'Cancel'}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '40%',
+              transform: 'translateY(-50%)',
+              background: 'rgba(0,0,0,0.45)',
+              border: 'none',
+              width: '32px',
+              height: '32px',
+              padding: 0,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 9999,
+            }}
+          >
+            <X size={14} color="#fff" />
+          </button>
         )}
-      </button>
+      </div>
 
       {/* Loading State */}
       {auditing && (
@@ -403,6 +475,51 @@ const DesignAuditor: React.FC = () => {
           borderRadius: 'var(--spectrum-corner-radius-200)',
           border: '2px solid #FA0',
         }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--spectrum-spacing-200)' }}>
+            <button
+              onClick={() => addAnalysisToCanvas(analysis)}
+              style={{
+                padding: '6px 10px',
+                fontSize: '13px',
+                fontWeight: 700,
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: '#4069FD',
+                color: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              Add to Canvas
+            </button>
+            <button
+              onClick={() => setAnalysis(null)}
+              title={t('cancel') || 'Cancel'}
+              aria-label={t('cancel') || 'Cancel'}
+              style={{
+                marginLeft: '8px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: 'var(--spectrum-corner-radius-100)',
+                color: 'var(--spectrum-gray-600)',
+                transition: 'all 0.13s ease-out',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--spectrum-red-100)';
+                e.currentTarget.style.color = 'var(--spectrum-red-700)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--spectrum-gray-600)';
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
           {/* Overall Score */}
           <div style={{ 
             textAlign: 'center', 

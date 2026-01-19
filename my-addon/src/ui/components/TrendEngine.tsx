@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useBrand } from '../../context/BrandContext';
 import { groqClient } from '../../services/GroqClient';
-import { TrendingUp, Sparkles, Palette, RefreshCw } from 'lucide-react';
+import { TrendingUp, Sparkles, Palette, RefreshCw, X } from 'lucide-react';
 import { ProgressCircle } from './LoadingComponents';
 import { useToast } from './ToastNotification';
 import { useLanguage } from '../../context/LanguageContext';
+import { DocumentSandboxApi } from '../../models/DocumentSandboxApi';
 
-const TrendEngine: React.FC = () => {
+const TrendEngine: React.FC<{ sandboxProxy?: DocumentSandboxApi }> = ({ sandboxProxy }) => {
   const { t, language } = useLanguage();
   const { brandData, hasBrandData } = useBrand();
   const [selectedTrends, setSelectedTrends] = useState<string[]>([]);
   const [selectedContentType, setSelectedContentType] = useState<string>('');
   const [generatingPrompt, setGeneratingPrompt] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [loadingTrends, setLoadingTrends] = useState(false);
   const [trends, setTrends] = useState<Array<{ id: string; name: string; desc: string }>>([]);
 
@@ -62,18 +64,20 @@ const TrendEngine: React.FC = () => {
 
   const handleGeneratePrompt = async () => {
     if (!hasBrandData) {
-      toast.showToast('warning', 'Extract brand data in Brand Brain first to generate prompts.', 5000);
+      // suppressed warning to reduce toast noise
       return;
     }
     if (selectedTrends.length === 0) {
-      toast.showToast('info', 'Select at least one trend to proceed.', 4000);
+      // suppressed info to reduce toast noise
       return;
     }
     if (!selectedContentType) {
-      toast.showToast('info', 'Choose a content type before generating.', 4000);
+      // suppressed info to reduce toast noise
       return;
     }
 
+    const controller = new AbortController();
+    setAbortController(controller);
     setGeneratingPrompt(true);
     setGeneratedPrompt(null);
 
@@ -89,14 +93,48 @@ const TrendEngine: React.FC = () => {
         brandData,
         false,
         [],
-        language
+        language,
+        controller.signal,
+        () => !!controller.signal.aborted
       );
       setGeneratedPrompt(prompt);
     } catch (error) {
-      alert('Failed to generate prompt. Please try again.');
+      if (error instanceof Error && error.message.includes('cancel')) {
+        // Cancelled by user - silent
+      } else {
+        alert('Failed to generate prompt. Please try again.');
+      }
     } finally {
       setGeneratingPrompt(false);
+      setAbortController(null);
     }
+  };
+
+  const cancelGeneratePrompt = () => {
+    if (abortController) {
+      abortController.abort();
+      setGeneratingPrompt(false);
+      setAbortController(null);
+    }
+  };
+
+  const addPromptToCanvas = async (text: string) => {
+    try {
+      if (!sandboxProxy) {
+        toast.showToast('error', 'Canvas API not available.', 4000);
+        return;
+      }
+      // Insert the generated prompt text into the document
+      const promptText = `Prompt:\n${text}`;
+      sandboxProxy.createText(promptText);
+      toast.showToast('success', 'Prompt added to document.', 4000);
+    } catch (err) {
+      toast.showToast('error', 'Failed to add prompt to document.', 5000);
+    }
+  };
+
+  const closeGeneratedPrompt = () => {
+    setGeneratedPrompt(null);
   };
 
   return (
@@ -367,44 +405,73 @@ const TrendEngine: React.FC = () => {
       </div>
 
       {/* Generate Button */}
-      <button
-        onClick={handleGeneratePrompt}
-        disabled={!hasBrandData || generatingPrompt || selectedTrends.length === 0 || !selectedContentType}
-        style={{
-          width: '100%',
-          padding: 'var(--spectrum-spacing-300)',
-          fontSize: 'var(--spectrum-font-size-200)',
-          fontWeight: 700,
-          fontFamily: 'adobe-clean, sans-serif',
-          backgroundColor: generatingPrompt ? 'var(--spectrum-gray-400)' : '#4069FD',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 'var(--spectrum-corner-radius-100)',
-          cursor: hasBrandData && !generatingPrompt && selectedTrends.length > 0 ? 'pointer' : 'not-allowed',
-          transition: 'all 0.13s ease-out',
-          opacity: !hasBrandData || selectedTrends.length === 0 ? 0.5 : 1,
-          marginBottom: 'var(--spectrum-spacing-400)'
-        }}
-        onMouseEnter={(e) => {
-          if (hasBrandData && !generatingPrompt && selectedTrends.length > 0) {
-            e.currentTarget.style.backgroundColor = '#5078FE';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (hasBrandData && !generatingPrompt && selectedTrends.length > 0) {
-            e.currentTarget.style.backgroundColor = '#4069FD';
-          }
-        }}
-      >
-        {generatingPrompt ? (
-          <>{t('generating')}</>
-        ) : (
-          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-            <Sparkles size={18} />
-            {t('generatePrompt')}
-          </span>
+      <div style={{ position: 'relative' }}>
+        <button
+          onClick={handleGeneratePrompt}
+          disabled={!hasBrandData || generatingPrompt || selectedTrends.length === 0 || !selectedContentType}
+          style={{
+            width: '100%',
+            padding: 'var(--spectrum-spacing-300)',
+            fontSize: 'var(--spectrum-font-size-200)',
+            fontWeight: 700,
+            fontFamily: 'adobe-clean, sans-serif',
+            backgroundColor: generatingPrompt ? 'var(--spectrum-gray-400)' : '#4069FD',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 'var(--spectrum-corner-radius-100)',
+            cursor: hasBrandData && !generatingPrompt && selectedTrends.length > 0 ? 'pointer' : 'not-allowed',
+            transition: 'all 0.13s ease-out',
+            opacity: !hasBrandData || selectedTrends.length === 0 ? 0.5 : 1,
+            marginBottom: 'var(--spectrum-spacing-400)'
+          }}
+          onMouseEnter={(e) => {
+            if (hasBrandData && !generatingPrompt && selectedTrends.length > 0) {
+              e.currentTarget.style.backgroundColor = '#5078FE';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (hasBrandData && !generatingPrompt && selectedTrends.length > 0) {
+              e.currentTarget.style.backgroundColor = '#4069FD';
+            }
+          }}
+        >
+          {generatingPrompt ? (
+            <>{t('generating')}</>
+          ) : (
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <Sparkles size={18} />
+              {t('generatePrompt')}
+            </span>
+          )}
+        </button>
+
+        {generatingPrompt && (
+          <button
+            onClick={cancelGeneratePrompt}
+            title={t('cancel') || 'Cancel'}
+            aria-label={t('cancel') || 'Cancel'}
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '40%',
+              transform: 'translateY(-50%)',
+              background: 'rgba(0,0,0,0.45)',
+              border: 'none',
+              width: '32px',
+              height: '32px',
+              padding: 0,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 9999,
+            }}
+          >
+            <X size={14} color="#fff" />
+          </button>
         )}
-      </button>
+      </div>
 
       {/* Loading State */}
       {generatingPrompt && (
@@ -416,6 +483,7 @@ const TrendEngine: React.FC = () => {
       {/* Generated Prompt Display */}
       {!generatingPrompt && generatedPrompt && (
         <div style={{
+          position: 'relative',
           padding: 'var(--spectrum-spacing-400)',
           backgroundColor: 'var(--spectrum-background-layer-2)',
           borderRadius: 'var(--spectrum-corner-radius-200)',
@@ -439,6 +507,55 @@ const TrendEngine: React.FC = () => {
               <Sparkles size={20} color="#00719f" />
               Generated Firefly Prompt
             </h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                onClick={() => addPromptToCanvas(generatedPrompt || '')}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#4069FD',
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                Add to Canvas
+              </button>
+            </div>
+
+            {/* single top-right clear button */}
+            <button
+              onClick={() => setGeneratedPrompt(null)}
+              title={t('cancel') || 'Cancel'}
+              aria-label={t('cancel') || 'Cancel'}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '8px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: 'var(--spectrum-corner-radius-100)',
+                color: 'var(--spectrum-gray-600)',
+                transition: 'all 0.13s ease-out',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--spectrum-red-100)';
+                e.currentTarget.style.color = 'var(--spectrum-red-700)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.color = 'var(--spectrum-gray-600)';
+              }}
+            >
+              <X size={16} />
+            </button>
           </div>
           
           <div style={{

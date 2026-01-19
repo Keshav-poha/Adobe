@@ -2,4 +2,5 @@
 export interface DocumentSandboxApi {
     createRectangle(options: { x: number; y: number; width: number; height: number; fillColor: string; strokeColor?: string; strokeWidth?: number }): void;
     addImageToDocument(imageBlob: Blob): Promise<void>;
+    createText(text: string): void;
 }

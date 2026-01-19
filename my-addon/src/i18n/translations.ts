@@ -58,6 +58,7 @@ export const translations = {
     analyzingImage: 'Analyzing image...',
     extractingBrandData: 'Extracting brand data...',
     extractionCancelled: 'Extraction cancelled',
+    notAccurateNote: 'Not accurate? Try other input methods above',
     
     // Trend Engine
     viralTrending: "What's Viral & Trending?",
@@ -189,6 +190,7 @@ export const translations = {
     analyzingImage: 'Analizando imagen...',
     extractingBrandData: 'Extrayendo datos de marca...',
     extractionCancelled: 'Extracción cancelada',
+    notAccurateNote: '¿No es exacto? Intenta con otros métodos de entrada arriba',
     
     // Trend Engine
     viralTrending: '¿Qué es Viral y Tendencia?',
@@ -320,6 +322,7 @@ export const translations = {
     analyzingImage: 'Analyse de l\'image...',
     extractingBrandData: 'Extraction des données de marque...',
     extractionCancelled: 'Extraction annulée',
+    notAccurateNote: 'Pas précis ? Essayez d\'autres méthodes d\'entrée ci-dessus',
     
     // Trend Engine
     viralTrending: 'Qu\'est-ce qui est Viral et Tendance?',
